@@ -5,6 +5,7 @@ import React, {
   useState,
   useCallback,
 } from "react";
+import { useNavigate } from "react-router-dom";
 import { jwtDecode } from "jwt-decode";
 import toast from "react-hot-toast";
 import { authApi } from "../api/authApi";
@@ -33,6 +34,7 @@ const isTokenValid = (token) => {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(getStoredUser);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   const persistSession = useCallback((data) => {
     // Refresh token is set as an httpOnly cookie by the server - only the
@@ -56,8 +58,14 @@ export function AuthProvider({ children }) {
           const { user: freshUser } = await authApi.me();
           setUser(freshUser);
           localStorage.setItem("kb_user", JSON.stringify(freshUser));
-        } catch {
-          clearSession();
+        } catch (err) {
+          // A network/timeout error (e.g. a Render cold start) doesn't mean
+          // the session is invalid - only an actual 401 from the server
+          // does. Keep the cached user so the app stays usable while the
+          // backend wakes up, instead of logging the user out.
+          if (err.response?.status === 401) {
+            clearSession();
+          }
         }
       } else if (token) {
         clearSession();
@@ -67,6 +75,21 @@ export function AuthProvider({ children }) {
     bootstrap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    // Raised by the axios interceptor when a refresh attempt comes back with
+    // a genuine 401 (refresh token invalid/expired/reused). Handled here,
+    // inside the router, so the redirect is a normal client-side navigation
+    // rather than a full-page load that would 404 on a route that only
+    // exists client-side.
+    const onForceLogout = () => {
+      setUser(null);
+      toast.error("Your session has expired - please log in again.");
+      navigate("/login", { replace: true });
+    };
+    window.addEventListener("auth:force-logout", onForceLogout);
+    return () => window.removeEventListener("auth:force-logout", onForceLogout);
+  }, [navigate]);
 
   const login = async (credentials) => {
     const data = await authApi.login(credentials);

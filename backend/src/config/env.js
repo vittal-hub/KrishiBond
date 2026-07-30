@@ -15,10 +15,14 @@ const config = {
   },
   cookie: {
     // httpOnly refresh-token cookie: readable only by the server, sent
-    // automatically by the browser on same-site requests to the API.
+    // automatically by the browser on requests to the API. Frontend and
+    // backend are deployed on different origins (Netlify + Render), so this
+    // is inherently a cross-site request - SameSite=Strict/Lax would cause
+    // the browser to withhold the cookie entirely. SameSite=None requires
+    // Secure, which is already true in production.
     refreshTokenName: 'kb_refresh_token',
     secure: nodeEnv === 'production',
-    sameSite: nodeEnv === 'production' ? 'strict' : 'lax',
+    sameSite: nodeEnv === 'production' ? 'none' : 'lax',
   },
   smtp: {
     host: process.env.SMTP_HOST || '',

@@ -27,7 +27,12 @@ async function register({ name, email, password, role, phone, location }) {
   const { accessToken, refreshToken } = issueTokenPair(user);
   await user.save();
 
-  await emailService.sendVerificationEmail(user, verificationToken);
+  // Fire-and-forget: the account is already created and tokens already
+  // issued at this point, so a slow or unreachable SMTP provider must never
+  // delay or fail the registration response.
+  emailService.sendVerificationEmail(user, verificationToken).catch((err) => {
+    logger.error(`Failed to send verification email to ${user.email}: ${err.message}`);
+  });
 
   return { user, accessToken, refreshToken };
 }
@@ -128,7 +133,9 @@ async function resendVerification(userId) {
   user.emailVerificationExpires = new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS);
   await user.save();
 
-  await emailService.sendVerificationEmail(user, verificationToken);
+  emailService.sendVerificationEmail(user, verificationToken).catch((err) => {
+    logger.error(`Failed to send verification email to ${user.email}: ${err.message}`);
+  });
 }
 
 async function forgotPassword(email) {
