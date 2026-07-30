@@ -35,15 +35,15 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   const persistSession = useCallback((data) => {
+    // Refresh token is set as an httpOnly cookie by the server - only the
+    // short-lived access token and user profile are kept client-side.
     localStorage.setItem("kb_access_token", data.accessToken);
-    localStorage.setItem("kb_refresh_token", data.refreshToken);
     localStorage.setItem("kb_user", JSON.stringify(data.user));
     setUser(data.user);
   }, []);
 
   const clearSession = useCallback(() => {
     localStorage.removeItem("kb_access_token");
-    localStorage.removeItem("kb_refresh_token");
     localStorage.removeItem("kb_user");
     setUser(null);
   }, []);
@@ -53,7 +53,7 @@ export function AuthProvider({ children }) {
       const token = localStorage.getItem("kb_access_token");
       if (token && isTokenValid(token)) {
         try {
-          const freshUser = await authApi.me();
+          const { user: freshUser } = await authApi.me();
           setUser(freshUser);
           localStorage.setItem("kb_user", JSON.stringify(freshUser));
         } catch {
@@ -78,7 +78,7 @@ export function AuthProvider({ children }) {
   const register = async (payload) => {
     const data = await authApi.register(payload);
     persistSession(data);
-    toast.success("Account created — welcome to KrishiBond");
+    toast.success("Account created — check your email to verify your address");
     return data.user;
   };
 

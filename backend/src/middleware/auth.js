@@ -17,6 +17,7 @@ const protect = asyncHandler(async (req, res, next) => {
   }
   const user = await User.findById(payload.sub);
   if (!user) throw new ApiError(401, 'User no longer exists');
+  if (user.status !== 'active') throw new ApiError(403, 'This account has been suspended. Contact support for help.');
   req.user = user;
   next();
 });

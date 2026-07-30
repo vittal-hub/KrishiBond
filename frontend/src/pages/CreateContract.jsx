@@ -24,7 +24,7 @@ export default function CreateContract() {
 
   useEffect(() => {
     if (!listingId) return;
-    marketplaceApi.getListing(listingId).then((listing) => {
+    marketplaceApi.getListing(listingId).then(({ listing }) => {
       setValue('cropType', listing.cropType);
       setValue('quantity', listing.quantity);
       setValue('unit', listing.unit);
@@ -42,9 +42,9 @@ export default function CreateContract() {
         pricePerUnit: Number(values.pricePerUnit),
         totalValue: Number(values.quantity) * Number(values.pricePerUnit),
       };
-      const contract = await contractApi.create(payload);
+      const { contract } = await contractApi.create(payload);
       toast.success('Contract proposal sent');
-      navigate(`/contracts/${contract._id}`);
+      navigate(`/contracts/${contract.id}`);
     } catch (error) {
       toast.error(getErrorMessage(error, 'Could not create the contract'));
     }

@@ -24,6 +24,10 @@ function errorHandler(err, req, res, next) {
     statusCode = 400;
     message = `Invalid value for ${err.path}`;
   }
+  if (err.name === 'MulterError') {
+    statusCode = 400;
+    message = err.code === 'LIMIT_FILE_SIZE' ? 'Each image must be 5MB or smaller' : err.message;
+  }
 
   if (statusCode >= 500) logger.error(`${req.method} ${req.originalUrl} -> ${err.stack || err.message}`);
 

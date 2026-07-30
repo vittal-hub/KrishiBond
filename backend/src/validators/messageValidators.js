@@ -4,6 +4,7 @@ const createThreadSchema = z.object({
   body: z.object({
     recipientId: z.string().min(1),
     contractId: z.string().optional(),
+    listingId: z.string().optional(),
   }),
 });
 
@@ -27,6 +28,13 @@ const disputeCommentSchema = z.object({
   }),
 });
 
+const resolveDisputeSchema = z.object({
+  body: z.object({
+    status: z.enum(['under_review', 'resolved', 'rejected']),
+    resolutionNote: z.string().min(3).optional(),
+  }),
+});
+
 const supportTicketSchema = z.object({
   body: z.object({
     subject: z.string().min(2),
@@ -39,5 +47,6 @@ module.exports = {
   sendMessageSchema,
   raiseDisputeSchema,
   disputeCommentSchema,
+  resolveDisputeSchema,
   supportTicketSchema,
 };

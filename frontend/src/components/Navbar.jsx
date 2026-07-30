@@ -10,6 +10,17 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useNotifications } from "../hooks/useNotifications.js";
+import { formatRelative } from "../utils/format";
+
+const CATEGORY_LABELS = {
+  contract: "Contract",
+  payment: "Payment",
+  offer: "Offer",
+  kyc: "KYC",
+  dispute: "Dispute",
+  message: "Message",
+  system: "KrishiBond",
+};
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -40,7 +51,7 @@ export default function Navbar() {
   return (
     <header className="sticky top-0 z-40 border-b border-ink/10 bg-paper/90 backdrop-blur">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-        <Link to="/dashboard" className="flex items-center gap-2">
+        <Link to="/" className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-stub bg-canopy-600 flex items-center justify-center">
             <Sprout className="w-4.5 h-4.5 text-paper" size={18} />
           </div>
@@ -83,18 +94,34 @@ export default function Navbar() {
                   {notifications.map((n) => (
                     <button
                       key={n._id}
-                      onClick={() => markRead(n._id)}
+                      onClick={() => {
+                        markRead(n._id);
+                        setBellOpen(false);
+                        if (n.link) navigate(n.link);
+                      }}
                       className={`w-full text-left px-4 py-3 text-sm border-b border-ink/5 hover:bg-canopy-50 transition ${
                         !n.read ? "bg-harvest-50/50" : ""
                       }`}
                     >
-                      <p className="text-ink font-medium">{n.title}</p>
-                      <p className="text-ink-faint text-xs mt-0.5">
-                        {n.message}
-                      </p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-ink font-medium text-xs uppercase tracking-wide">
+                          {CATEGORY_LABELS[n.category] ?? "KrishiBond"}
+                        </p>
+                        <span className="text-ink-faint text-[10px] whitespace-nowrap">
+                          {formatRelative(n.createdAt)}
+                        </span>
+                      </div>
+                      <p className="text-ink-soft text-xs mt-1">{n.message}</p>
                     </button>
                   ))}
                 </div>
+                <Link
+                  to="/profile"
+                  onClick={() => setBellOpen(false)}
+                  className="block px-4 py-2.5 text-xs text-center text-canopy-700 font-medium hover:bg-canopy-50 border-t border-ink/10"
+                >
+                  Manage notification settings
+                </Link>
               </div>
             )}
           </div>

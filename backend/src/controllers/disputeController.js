@@ -3,7 +3,14 @@ const ApiError = require('../utils/ApiError');
 const Contract = require('../models/Contract');
 const Dispute = require('../models/Dispute');
 const { notifyUser } = require('../utils/notify');
+const { recordAudit } = require('../utils/auditLog');
+const { toDisputeDTO, toContractDTO } = require('../utils/dto');
+const { uploadChatAttachment } = require('../services/upload.service');
 const { assertParty, logEvent } = require('./contractController');
+
+function otherContractParty(contract, userId) {
+  return contract.farmer.toString() === userId.toString() ? contract.buyer : contract.farmer;
+}
 
 const listDisputes = asyncHandler(async (req, res) => {
   const contracts = await Contract.find({ $or: [{ farmer: req.user._id }, { buyer: req.user._id }] }).select('_id');
@@ -11,7 +18,7 @@ const listDisputes = asyncHandler(async (req, res) => {
 
   const filter = req.user.role === 'admin' ? {} : { contract: { $in: contractIds } };
   const disputes = await Dispute.find(filter).populate('raisedBy', 'name').sort({ createdAt: -1 });
-  res.json({ success: true, disputes });
+  res.json({ success: true, disputes: disputes.map(toDisputeDTO) });
 });
 
 const createDispute = asyncHandler(async (req, res) => {
@@ -26,19 +33,20 @@ const createDispute = asyncHandler(async (req, res) => {
     reason,
     evidenceUrls: evidenceUrls || [],
   });
+  await dispute.populate('raisedBy', 'name');
 
   contract.status = 'disputed';
   await contract.save();
   await logEvent(contract._id, req.user._id, 'dispute_raised', reason);
 
-  const counterpart = contract.farmer.toString() === req.user._id.toString() ? contract.buyer : contract.farmer;
-  await notifyUser(req.app.get('io'), counterpart, {
+  await notifyUser(req.app.get('io'), otherContractParty(contract, req.user._id), {
     type: 'dispute_raised',
-    message: `A dispute was raised on your contract`,
+    category: 'dispute',
+    message: 'A dispute was raised on your contract',
     link: `/disputes/${dispute._id}`,
   });
 
-  res.status(201).json({ success: true, dispute });
+  res.status(201).json({ success: true, dispute: toDisputeDTO(dispute) });
 });
 
 const getDispute = asyncHandler(async (req, res) => {
@@ -47,10 +55,10 @@ const getDispute = asyncHandler(async (req, res) => {
     .populate('comments.author', 'name');
   if (!dispute) throw new ApiError(404, 'Dispute not found');
 
-  const contract = await Contract.findById(dispute.contract);
+  const contract = await Contract.findById(dispute.contract).populate('farmer', 'name').populate('buyer', 'name');
   if (req.user.role !== 'admin') assertParty(contract, req.user._id);
 
-  res.json({ success: true, dispute, contract });
+  res.json({ success: true, dispute: toDisputeDTO(dispute), contract: contract ? toContractDTO(contract) : null });
 });
 
 const addComment = asyncHandler(async (req, res) => {
@@ -63,29 +71,86 @@ const addComment = asyncHandler(async (req, res) => {
   dispute.comments.push({ author: req.user._id, text: req.body.text });
   await dispute.save();
   await dispute.populate('comments.author', 'name');
+  await dispute.populate('raisedBy', 'name');
 
-  res.status(201).json({ success: true, dispute });
+  const notifyTargets =
+    req.user.role === 'admin'
+      ? [contract.farmer, contract.buyer]
+      : [otherContractParty(contract, req.user._id)];
+
+  await Promise.all(
+    notifyTargets.map((userId) =>
+      notifyUser(req.app.get('io'), userId, {
+        type: 'dispute_comment',
+        category: 'dispute',
+        message: `New comment on your dispute: "${dispute.reason}"`,
+        link: `/disputes/${dispute._id}`,
+      })
+    )
+  );
+
+  res.status(201).json({ success: true, dispute: toDisputeDTO(dispute) });
+});
+
+const addEvidence = asyncHandler(async (req, res) => {
+  const dispute = await Dispute.findById(req.params.id);
+  if (!dispute) throw new ApiError(404, 'Dispute not found');
+
+  const contract = await Contract.findById(dispute.contract);
+  if (req.user.role !== 'admin') assertParty(contract, req.user._id);
+  if (!req.file) throw new ApiError(400, 'No file was provided');
+
+  const { url } = await uploadChatAttachment(req.file, `krishibond/disputes/${dispute._id}`);
+  dispute.evidenceUrls.push(url);
+  await dispute.save();
+  await dispute.populate('raisedBy', 'name');
+  await dispute.populate('comments.author', 'name');
+
+  res.status(201).json({ success: true, dispute: toDisputeDTO(dispute) });
 });
 
 // Admin-only resolution
 const resolveDispute = asyncHandler(async (req, res) => {
-  if (req.user.role !== 'admin') throw new ApiError(403, 'Only admins can resolve disputes');
   const { status, resolutionNote } = req.body;
-  const allowed = ['resolved', 'rejected', 'under_review'];
-  if (!allowed.includes(status)) throw new ApiError(400, `status must be one of: ${allowed.join(', ')}`);
 
   const dispute = await Dispute.findById(req.params.id);
   if (!dispute) throw new ApiError(404, 'Dispute not found');
 
+  const beforeStatus = dispute.status;
   dispute.status = status;
   dispute.resolutionNote = resolutionNote;
   await dispute.save();
+  await dispute.populate('raisedBy', 'name');
+  await dispute.populate('comments.author', 'name');
 
-  if (status === 'resolved') {
-    await Contract.findByIdAndUpdate(dispute.contract, { status: 'active' });
+  await recordAudit(req, {
+    action: 'DISPUTE_RESOLVE',
+    entityType: 'Dispute',
+    entityId: dispute._id,
+    before: { status: beforeStatus },
+    after: { status, resolutionNote },
+  });
+
+  const contract = await Contract.findById(dispute.contract);
+  if (contract && status === 'resolved') {
+    contract.status = 'active';
+    await contract.save();
   }
 
-  res.json({ success: true, dispute });
+  if (contract) {
+    await Promise.all(
+      [contract.farmer, contract.buyer].map((userId) =>
+        notifyUser(req.app.get('io'), userId, {
+          type: 'dispute_resolved',
+          category: 'dispute',
+          message: `Your dispute was marked as ${status.replace('_', ' ')}`,
+          link: `/disputes/${dispute._id}`,
+        })
+      )
+    );
+  }
+
+  res.json({ success: true, dispute: toDisputeDTO(dispute) });
 });
 
-module.exports = { listDisputes, createDispute, getDispute, addComment, resolveDispute };
+module.exports = { listDisputes, createDispute, getDispute, addComment, addEvidence, resolveDispute };

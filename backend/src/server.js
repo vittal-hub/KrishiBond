@@ -10,8 +10,6 @@ async function start() {
   await connectDB();
 
   const server = http.createServer(app);
-  // initSockets attaches its own 'upgrade' handler to `server` and returns
-  // an io-shaped object ( io.to(room).emit(event, data) ) for controllers to use.
   const io = initSockets(server);
 
   // Make io available inside controllers via req.app.get('io')

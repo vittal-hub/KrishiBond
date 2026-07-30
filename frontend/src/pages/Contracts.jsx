@@ -21,7 +21,7 @@ export default function Contracts() {
     setLoading(true);
     contractApi
       .list({ status: tab !== 'all' ? tab : undefined })
-      .then((data) => active && setContracts(data.items ?? data))
+      .then((data) => active && setContracts(data.contracts))
       .catch((error) => toast.error(getErrorMessage(error, 'Could not load contracts')))
       .finally(() => active && setLoading(false));
     return () => {
@@ -60,8 +60,8 @@ export default function Contracts() {
         <div className="stub-card divide-y divide-ink/5">
           {contracts.map((c) => (
             <Link
-              key={c._id}
-              to={`/contracts/${c._id}`}
+              key={c.id}
+              to={`/contracts/${c.id}`}
               className="flex flex-wrap items-center justify-between gap-3 p-5 hover:bg-canopy-50/40 transition"
             >
               <div>

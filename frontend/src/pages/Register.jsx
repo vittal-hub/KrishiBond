@@ -1,5 +1,5 @@
-import React from "react";
-import { Link, useNavigate } from "react-router-dom";
+import React, { useEffect } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { Sprout, Wheat, Building2 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -9,6 +9,7 @@ import { getErrorMessage } from "../utils/errorMessage";
 export default function Register() {
   const { register: registerUser } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const {
     register,
     handleSubmit,
@@ -20,9 +21,19 @@ export default function Register() {
   const role = watch("role");
   const password = watch("password");
 
+  // Lets landing-page CTAs like "Register as Buyer" (/register?role=buyer)
+  // preselect the role toggle below instead of always defaulting to farmer.
+  useEffect(() => {
+    const requested = searchParams.get("role");
+    if (requested === "farmer" || requested === "buyer") {
+      setValue("role", requested);
+    }
+  }, [searchParams, setValue]);
+
   const onSubmit = async (values) => {
     try {
-      await registerUser(values);
+      const { district, state, confirmPassword, ...rest } = values;
+      await registerUser({ ...rest, location: { district, state } });
       navigate("/dashboard", { replace: true });
     } catch (error) {
       toast.error(getErrorMessage(error, "Could not create your account"));
@@ -140,21 +151,39 @@ export default function Register() {
               )}
             </div>
 
-            <div>
-              <label className="label" htmlFor="location">
-                Location
-              </label>
-              <input
-                id="location"
-                className="input-field"
-                placeholder="District, State"
-                {...register("location", { required: "Location is required" })}
-              />
-              {errors.location && (
-                <p className="text-xs text-clay-500 mt-1">
-                  {errors.location.message}
-                </p>
-              )}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label" htmlFor="district">
+                  District
+                </label>
+                <input
+                  id="district"
+                  className="input-field"
+                  placeholder="Nashik"
+                  {...register("district", { required: "District is required" })}
+                />
+                {errors.district && (
+                  <p className="text-xs text-clay-500 mt-1">
+                    {errors.district.message}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="label" htmlFor="state">
+                  State
+                </label>
+                <input
+                  id="state"
+                  className="input-field"
+                  placeholder="Maharashtra"
+                  {...register("state", { required: "State is required" })}
+                />
+                {errors.state && (
+                  <p className="text-xs text-clay-500 mt-1">
+                    {errors.state.message}
+                  </p>
+                )}
+              </div>
             </div>
 
             <div>

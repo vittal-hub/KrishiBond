@@ -15,4 +15,15 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-module.exports = { authLimiter, apiLimiter };
+// For user-generated-content endpoints prone to spam (messages, reviews,
+// disputes, support tickets) - tighter than the general API ceiling but
+// generous enough for legitimate use.
+const writeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many requests, please slow down.' },
+});
+
+module.exports = { authLimiter, apiLimiter, writeLimiter };

@@ -19,7 +19,7 @@ function NewDisputeForm({ defaultContractId, onCreated, onCancel }) {
 
   const onSubmit = async (values) => {
     try {
-      const dispute = await disputeApi.file(values);
+      const { dispute } = await disputeApi.file(values);
       toast.success("Dispute filed — our team will review it shortly");
       onCreated(dispute);
     } catch (error) {
@@ -54,7 +54,7 @@ function NewDisputeForm({ defaultContractId, onCreated, onCancel }) {
           rows={4}
           className="input-field resize-none"
           placeholder="Describe the issue with dates, quantities, or quality concerns"
-          {...register("reason", { required: "Please describe the issue" })}
+          {...register("reason", { required: "Please describe the issue", minLength: { value: 5, message: "Please provide a bit more detail" } })}
         />
         {errors.reason && (
           <p className="text-xs text-clay-500 mt-1">{errors.reason.message}</p>
@@ -83,7 +83,7 @@ export default function Disputes() {
   useEffect(() => {
     disputeApi
       .list()
-      .then((data) => setDisputes(data.items ?? data))
+      .then((data) => setDisputes(data.disputes ?? []))
       .catch((error) =>
         toast.error(getErrorMessage(error, "Could not load disputes")),
       )
@@ -122,8 +122,8 @@ export default function Disputes() {
         <div className="stub-card divide-y divide-ink/5">
           {disputes.map((d) => (
             <Link
-              key={d._id}
-              to={`/disputes/${d._id}`}
+              key={d.id}
+              to={`/disputes/${d.id}`}
               className="flex items-center justify-between gap-3 p-5 hover:bg-clay-50/40 transition"
             >
               <div className="flex items-center gap-3">
