@@ -6,7 +6,13 @@ import { contractApi } from '../api/contractApi';
 import { marketplaceApi } from '../api/marketplaceApi';
 import { getErrorMessage } from '../utils/errorMessage';
 
-const UNITS = ['Quintal', 'Tonne', 'Kg', 'Bag'];
+// Values must match the backend's unit enum exactly (Contract/Listing
+// models both use `['kg', 'quintal', 'ton']`) - only the label is for display.
+const UNITS = [
+  { value: 'quintal', label: 'Quintal' },
+  { value: 'ton', label: 'Tonne' },
+  { value: 'kg', label: 'Kg' },
+];
 
 export default function CreateContract() {
   const navigate = useNavigate();
@@ -17,9 +23,10 @@ export default function CreateContract() {
     register,
     handleSubmit,
     setValue,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm({
-    defaultValues: { unit: 'Quintal', milestones: [{ label: 'Delivery confirmed' }, { label: 'Quality check passed' }] },
+    defaultValues: { unit: 'quintal', milestones: [{ label: 'Delivery confirmed' }, { label: 'Quality check passed' }] },
   });
 
   useEffect(() => {
@@ -35,17 +42,30 @@ export default function CreateContract() {
   }, [listingId, setValue]);
 
   const onSubmit = async (values) => {
+    const { pricePerUnit, ...rest } = values;
     try {
       const payload = {
-        ...values,
+        ...rest,
         quantity: Number(values.quantity),
-        pricePerUnit: Number(values.pricePerUnit),
-        totalValue: Number(values.quantity) * Number(values.pricePerUnit),
+        // Backend/Contract model field is `agreedPricePerUnit`, not
+        // `pricePerUnit` - the form field name stays as-is, only the
+        // outgoing key is renamed to match what the API actually reads.
+        agreedPricePerUnit: Number(pricePerUnit),
       };
       const { contract } = await contractApi.create(payload);
       toast.success('Contract proposal sent');
       navigate(`/contracts/${contract.id}`);
     } catch (error) {
+      const fieldErrors = error.response?.data?.errors;
+      if (fieldErrors && typeof fieldErrors === 'object') {
+        // Map backend field names onto the form's own field names where they
+        // differ (agreedPricePerUnit -> the pricePerUnit input) and surface
+        // each one inline, right under the field that failed.
+        const FIELD_ALIASES = { agreedPricePerUnit: 'pricePerUnit' };
+        Object.entries(fieldErrors).forEach(([field, message]) => {
+          setError(FIELD_ALIASES[field] || field, { type: 'server', message });
+        });
+      }
       toast.error(getErrorMessage(error, 'Could not create the contract'));
     }
   };
@@ -84,7 +104,7 @@ export default function CreateContract() {
           <div>
             <label className="label" htmlFor="unit">Unit</label>
             <select id="unit" className="input-field" {...register('unit')}>
-              {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+              {UNITS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
             </select>
           </div>
         </div>

@@ -10,10 +10,16 @@ function errorHandler(err, req, res, next) {
   let { statusCode, message } = err;
   statusCode = statusCode || 500;
   message = message || 'Internal server error';
+  // Zod validation (see middleware/validate.js) already puts a field -> message
+  // map on err.errors; a Mongoose ValidationError gets the same shape below.
+  let fieldErrors = err.errors || undefined;
 
   if (err.name === 'ValidationError') {
     statusCode = 400;
     message = Object.values(err.errors).map((e) => e.message).join(', ');
+    fieldErrors = Object.fromEntries(
+      Object.entries(err.errors).map(([field, e]) => [field, e.message])
+    );
   }
   if (err.code === 11000) {
     statusCode = 409;
@@ -34,6 +40,7 @@ function errorHandler(err, req, res, next) {
   res.status(statusCode).json({
     success: false,
     message,
+    errors: fieldErrors,
     details: err.details || undefined,
   });
 }
