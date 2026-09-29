@@ -1,6 +1,8 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { Sprout, Menu, X } from "lucide-react";
+import { useAuth } from "../context/AuthContext.jsx";
+import Loader from "../components/Loader.jsx";
 import HeroSection from "../components/landing/HeroSection.jsx";
 import WhyKrishiBond from "../components/landing/WhyKrishiBond.jsx";
 import HowItWorks from "../components/landing/HowItWorks.jsx";
@@ -20,6 +22,17 @@ const NAV_LINKS = [
 
 export default function Landing() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const { isAuthenticated, loading } = useAuth();
+
+  // "/" is the public marketing page and has no idea whether a visitor is
+  // authenticated - previously an already-logged-in user landing here (e.g.
+  // via the app's own logo link) saw this logged-out header/CTAs with no
+  // trace of their session, which looked exactly like being logged out even
+  // though nothing about their auth state had actually changed. Redirecting
+  // to the real authenticated home here closes that gap for every path that
+  // can land a signed-in user on "/", not just the logo link.
+  if (loading) return <Loader full label="Loading" />;
+  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
 
   return (
     <div className="min-h-screen bg-paper">

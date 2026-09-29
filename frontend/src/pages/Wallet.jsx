@@ -118,11 +118,9 @@ export default function Wallet() {
       <div className="stub-card p-5 flex items-start gap-3">
         <Landmark className="w-4 h-4 text-ink-faint mt-0.5 shrink-0" />
         <p className="text-sm text-ink-soft leading-relaxed">
-          {bankAccount?.isVerified
-            ? `Verified for withdrawals: ${bankAccount.accountHolderName} · ${bankAccount.accountNumberMasked}`
-            : bankAccount
-              ? 'Your bank account is on file and pending verification. You can withdraw once it is verified.'
-              : 'Only funds actually released to you from a completed contract, or added directly, become available to withdraw. Add a bank account from "Withdraw to Bank" to get started.'}
+          {bankAccount
+            ? `Saved for withdrawals: ${bankAccount.accountHolderName} · ${bankAccount.accountNumberMasked}`
+            : 'Only funds actually released to you from a completed contract, or added directly, become available to withdraw. Enter your bank details from "Withdraw to Bank" whenever you\'re ready.'}
         </p>
       </div>
 

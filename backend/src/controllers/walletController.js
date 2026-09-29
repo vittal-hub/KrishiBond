@@ -10,16 +10,16 @@ const { razorpay: razorpayConfig } = require('../config/env');
 
 const { getOrCreateWallet } = walletService;
 
-// The bank account a user can withdraw to. Deliberately reuses the existing
-// Kyc.bankDetails (already admin-reviewed via the KYC queue) instead of a
-// parallel "BankAccount" model - one already-verified place for this data,
-// and withdrawal eligibility naturally follows the same admin-approval
-// workflow the app already has (AdminDashboard's KYC Queue).
-async function getVerifiedBankAccount(userId) {
+// A previously-saved bank account, if the user chose to save one from an
+// earlier withdrawal (see `saveAccount` in initiateWithdrawal below). Reuses
+// the existing Kyc.bankDetails field rather than a parallel "BankAccount"
+// model - the only reuse of Kyc here; withdrawal eligibility is NOT gated on
+// Kyc.status any more (see initiateWithdrawal for why).
+async function getSavedBankAccount(userId) {
   const kyc = await Kyc.findOne({ user: userId });
   const bank = kyc?.bankDetails;
   if (!bank?.accountNumber || !bank?.ifsc || !bank?.accountHolderName) return null;
-  return { kyc, bank };
+  return bank;
 }
 
 function maskAccountNumber(accountNumber) {
@@ -29,16 +29,15 @@ function maskAccountNumber(accountNumber) {
 
 const getMyWallet = asyncHandler(async (req, res) => {
   const wallet = await getOrCreateWallet(req.user._id);
-  const verified = await getVerifiedBankAccount(req.user._id);
+  const saved = await getSavedBankAccount(req.user._id);
   res.json({
     success: true,
     wallet,
-    bankAccount: verified
+    bankAccount: saved
       ? {
-          accountHolderName: verified.bank.accountHolderName,
-          accountNumberMasked: maskAccountNumber(verified.bank.accountNumber),
-          ifsc: verified.bank.ifsc,
-          isVerified: verified.kyc.status === 'approved',
+          accountHolderName: saved.accountHolderName,
+          accountNumberMasked: maskAccountNumber(saved.accountNumber),
+          ifsc: saved.ifsc,
         }
       : null,
   });
@@ -203,14 +202,25 @@ const verifyTopupRazorpay = asyncHandler(async (req, res) => {
 // with only the very last "money actually moves" step left as an explicit,
 // clearly-labeled stub a real payout integration can replace.
 const initiateWithdrawal = asyncHandler(async (req, res) => {
-  const amount = req.body.amount;
+  const { amount, useSavedAccount, saveAccount } = req.body;
 
-  const verified = await getVerifiedBankAccount(req.user._id);
-  if (!verified) {
-    throw new ApiError(400, 'Add your bank account details before withdrawing');
-  }
-  if (verified.kyc.status !== 'approved') {
-    throw new ApiError(400, 'Please add and verify your own bank account before withdrawing');
+  // Bank details come directly with the request - there is no "add your
+  // bank account and wait for an admin to approve it" step gating
+  // withdrawal. Ownership is still fully enforced: these are the details
+  // *this* authenticated request supplied, never looked up by an id/owner
+  // the client could point at someone else's data.
+  let bankDetails;
+  if (useSavedAccount) {
+    bankDetails = await getSavedBankAccount(req.user._id);
+    if (!bankDetails) {
+      throw new ApiError(400, 'No saved bank account found. Enter your bank details to withdraw.');
+    }
+  } else {
+    bankDetails = {
+      accountHolderName: req.body.accountHolderName,
+      accountNumber: req.body.accountNumber,
+      ifsc: req.body.ifscCode.toUpperCase(),
+    };
   }
 
   const session = await mongoose.startSession();
@@ -235,14 +245,25 @@ const initiateWithdrawal = asyncHandler(async (req, res) => {
           status: 'processing',
           gateway: 'demo',
           meta: {
-            accountHolderName: verified.bank.accountHolderName,
-            accountNumberMasked: maskAccountNumber(verified.bank.accountNumber),
-            ifsc: verified.bank.ifsc,
+            accountHolderName: bankDetails.accountHolderName,
+            accountNumberMasked: maskAccountNumber(bankDetails.accountNumber),
+            ifsc: bankDetails.ifsc,
           },
         }],
         { session }
       );
       transaction = created;
+
+      // Optional convenience only - never required to withdraw. Does not
+      // touch Kyc.status, so this is never mistaken for "verified"; it's
+      // just remembering the details for next time's `useSavedAccount`.
+      if (saveAccount && !useSavedAccount) {
+        await Kyc.findOneAndUpdate(
+          { user: req.user._id },
+          { $set: { bankDetails }, $setOnInsert: { user: req.user._id } },
+          { upsert: true, session }
+        );
+      }
     });
   } finally {
     await session.endSession();

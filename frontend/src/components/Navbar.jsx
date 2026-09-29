@@ -62,7 +62,12 @@ export default function Navbar({ onMenuClick }) {
               <Menu className="w-5 h-5 text-ink-soft" />
             </button>
           )}
-          <Link to="/" className="flex items-center gap-2">
+          {/* This Navbar only ever renders inside AppLayout, i.e. only for an
+              already-authenticated user - the logo is pure navigation to
+              their home (Dashboard), never "/", which is the public
+              marketing page and would otherwise render the logged-out
+              header on top of a still-valid session (see Landing.jsx). */}
+          <Link to="/dashboard" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-stub bg-canopy-600 flex items-center justify-center">
               <Sprout className="w-4.5 h-4.5 text-paper" size={18} />
             </div>

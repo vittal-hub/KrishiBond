@@ -3,6 +3,7 @@ const testDb = require('./testDb');
 const app = require('../src/app');
 const Wallet = require('../src/models/Wallet');
 const Kyc = require('../src/models/Kyc');
+const Transaction = require('../src/models/Transaction');
 const { registerUser, authHeader, createListing } = require('./helpers');
 
 beforeAll(async () => {
@@ -17,17 +18,18 @@ afterAll(async () => {
   await testDb.disconnect();
 });
 
-async function addVerifiedBankAccount(userId) {
-  await Kyc.findOneAndUpdate(
-    { user: userId },
-    {
-      $set: {
-        status: 'approved',
-        bankDetails: { accountHolderName: 'Ramesh Meena', accountNumber: '123456789012', ifsc: 'SBIN0001234' },
-      },
-    },
-    { upsert: true }
-  );
+// Bank details supplied directly with a withdrawal request - there is no
+// separate "add and wait for verification" step any more (see
+// walletController.initiateWithdrawal), so every withdrawal test sends
+// these fields as part of the request itself, exactly like the real UI does.
+function bankFields(overrides = {}) {
+  return {
+    accountHolderName: 'Ramesh Meena',
+    accountNumber: '123456789012',
+    confirmAccountNumber: '123456789012',
+    ifscCode: 'SBIN0001234',
+    ...overrides,
+  };
 }
 
 async function creditWalletBalance(userId, amount) {
@@ -150,27 +152,35 @@ describe('settlement (escrow release -> farmer wallet)', () => {
 });
 
 describe('withdraw to bank', () => {
-  it('rejects a withdrawal with no bank account on file', async () => {
+  it('allows a withdrawal with bank details submitted directly - no verification blocker', async () => {
     const farmer = await registerUser(app, { role: 'farmer', email: 'farmer@example.com' });
-    await creditWalletBalance(farmer.user.id, 5000);
+    await creditWalletBalance(farmer.user.id, 50000);
 
     const res = await request(app)
       .post('/api/wallet/withdraw/initiate')
       .set(authHeader(farmer.accessToken))
-      .send({ amount: 1000 });
+      .send({ ...bankFields(), amount: 20000 });
 
-    expect(res.status).toBe(400);
-    expect(res.body.message).toMatch(/bank account/i);
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('processing');
   });
 
-  it('rejects a withdrawal when the bank account is not yet verified', async () => {
+  it('allows withdrawal even when a Kyc record exists but has never been approved', async () => {
+    const farmer = await registerUser(app, { role: 'farmer', email: 'farmer@example.com' });
+    await creditWalletBalance(farmer.user.id, 50000);
+    await Kyc.create({ user: farmer.user.id, status: 'pending' });
+
+    const res = await request(app)
+      .post('/api/wallet/withdraw/initiate')
+      .set(authHeader(farmer.accessToken))
+      .send({ ...bankFields(), amount: 20000 });
+
+    expect(res.status).toBe(201);
+  });
+
+  it('rejects missing bank details', async () => {
     const farmer = await registerUser(app, { role: 'farmer', email: 'farmer@example.com' });
     await creditWalletBalance(farmer.user.id, 5000);
-    await Kyc.create({
-      user: farmer.user.id,
-      status: 'pending',
-      bankDetails: { accountHolderName: 'Ramesh Meena', accountNumber: '123456789012', ifsc: 'SBIN0001234' },
-    });
 
     const res = await request(app)
       .post('/api/wallet/withdraw/initiate')
@@ -178,18 +188,66 @@ describe('withdraw to bank', () => {
       .send({ amount: 1000 });
 
     expect(res.status).toBe(400);
-    expect(res.body.message).toMatch(/verif/i);
+  });
+
+  it('rejects an invalid (non-numeric/too-short) account number', async () => {
+    const farmer = await registerUser(app, { role: 'farmer', email: 'farmer@example.com' });
+    await creditWalletBalance(farmer.user.id, 5000);
+
+    const res = await request(app)
+      .post('/api/wallet/withdraw/initiate')
+      .set(authHeader(farmer.accessToken))
+      .send({ ...bankFields({ accountNumber: 'ABC123', confirmAccountNumber: 'ABC123' }), amount: 1000 });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects mismatched account number and confirmation', async () => {
+    const farmer = await registerUser(app, { role: 'farmer', email: 'farmer@example.com' });
+    await creditWalletBalance(farmer.user.id, 5000);
+
+    const res = await request(app)
+      .post('/api/wallet/withdraw/initiate')
+      .set(authHeader(farmer.accessToken))
+      .send({ ...bankFields({ accountNumber: '123456789', confirmAccountNumber: '987654321' }), amount: 1000 });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects an invalid IFSC code', async () => {
+    const farmer = await registerUser(app, { role: 'farmer', email: 'farmer@example.com' });
+    await creditWalletBalance(farmer.user.id, 5000);
+
+    const res = await request(app)
+      .post('/api/wallet/withdraw/initiate')
+      .set(authHeader(farmer.accessToken))
+      .send({ ...bankFields({ ifscCode: '123456' }), amount: 1000 });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('normalizes a lowercase IFSC code to uppercase', async () => {
+    const farmer = await registerUser(app, { role: 'farmer', email: 'farmer@example.com' });
+    await creditWalletBalance(farmer.user.id, 5000);
+
+    const res = await request(app)
+      .post('/api/wallet/withdraw/initiate')
+      .set(authHeader(farmer.accessToken))
+      .send({ ...bankFields({ ifscCode: 'sbin0001234' }), amount: 1000 });
+
+    expect(res.status).toBe(201);
+    const tx = await Transaction.findById(res.body.transactionId);
+    expect(tx.meta.ifsc).toBe('SBIN0001234');
   });
 
   it('rejects a withdrawal greater than the available balance', async () => {
     const farmer = await registerUser(app, { role: 'farmer', email: 'farmer@example.com' });
-    await addVerifiedBankAccount(farmer.user.id);
     await creditWalletBalance(farmer.user.id, 10000);
 
     const res = await request(app)
       .post('/api/wallet/withdraw/initiate')
       .set(authHeader(farmer.accessToken))
-      .send({ amount: 15000 });
+      .send({ ...bankFields(), amount: 15000 });
 
     expect(res.status).toBe(400);
     const wallet = await Wallet.findOne({ user: farmer.user.id });
@@ -198,27 +256,25 @@ describe('withdraw to bank', () => {
 
   it('rejects zero, negative, and non-numeric withdrawal amounts', async () => {
     const farmer = await registerUser(app, { role: 'farmer', email: 'farmer@example.com' });
-    await addVerifiedBankAccount(farmer.user.id);
     await creditWalletBalance(farmer.user.id, 10000);
 
     for (const amount of [0, -500, 'abc']) {
       const res = await request(app)
         .post('/api/wallet/withdraw/initiate')
         .set(authHeader(farmer.accessToken))
-        .send({ amount });
+        .send({ ...bankFields(), amount });
       expect(res.status).toBe(400);
     }
   });
 
   it('reserves the amount immediately (moves it out of available balance) on initiate', async () => {
     const farmer = await registerUser(app, { role: 'farmer', email: 'farmer@example.com' });
-    await addVerifiedBankAccount(farmer.user.id);
     await creditWalletBalance(farmer.user.id, 50000);
 
     const res = await request(app)
       .post('/api/wallet/withdraw/initiate')
       .set(authHeader(farmer.accessToken))
-      .send({ amount: 20000 });
+      .send({ ...bankFields(), amount: 20000 });
     expect(res.status).toBe(201);
 
     const wallet = await Wallet.findOne({ user: farmer.user.id });
@@ -228,13 +284,12 @@ describe('withdraw to bank', () => {
 
   it('completes successfully and finalizes the pending amount, leaving the wallet correct', async () => {
     const farmer = await registerUser(app, { role: 'farmer', email: 'farmer@example.com' });
-    await addVerifiedBankAccount(farmer.user.id);
     await creditWalletBalance(farmer.user.id, 50000);
 
     const initRes = await request(app)
       .post('/api/wallet/withdraw/initiate')
       .set(authHeader(farmer.accessToken))
-      .send({ amount: 20000 });
+      .send({ ...bankFields(), amount: 20000 });
 
     const completeRes = await request(app)
       .post(`/api/wallet/withdraw/${initRes.body.transactionId}/demo/complete`)
@@ -249,13 +304,12 @@ describe('withdraw to bank', () => {
 
   it('restores the wallet balance when the simulated payout fails', async () => {
     const farmer = await registerUser(app, { role: 'farmer', email: 'farmer@example.com' });
-    await addVerifiedBankAccount(farmer.user.id);
     await creditWalletBalance(farmer.user.id, 50000);
 
     const initRes = await request(app)
       .post('/api/wallet/withdraw/initiate')
       .set(authHeader(farmer.accessToken))
-      .send({ amount: 20000 });
+      .send({ ...bankFields(), amount: 20000 });
 
     const completeRes = await request(app)
       .post(`/api/wallet/withdraw/${initRes.body.transactionId}/demo/complete`)
@@ -268,15 +322,14 @@ describe('withdraw to bank', () => {
     expect(completeRes.body.wallet.pendingWithdrawal).toBe(0);
   });
 
-  it('does not process the same withdrawal twice, even if completion is retried', async () => {
+  it('does not process the same withdrawal twice, even if completion is retried (double-click/retry safe)', async () => {
     const farmer = await registerUser(app, { role: 'farmer', email: 'farmer@example.com' });
-    await addVerifiedBankAccount(farmer.user.id);
     await creditWalletBalance(farmer.user.id, 50000);
 
     const initRes = await request(app)
       .post('/api/wallet/withdraw/initiate')
       .set(authHeader(farmer.accessToken))
-      .send({ amount: 20000 });
+      .send({ ...bankFields(), amount: 20000 });
 
     await request(app)
       .post(`/api/wallet/withdraw/${initRes.body.transactionId}/demo/complete`)
@@ -297,14 +350,13 @@ describe('withdraw to bank', () => {
 
   it('does not let concurrent withdrawal requests over-withdraw the same balance', async () => {
     const farmer = await registerUser(app, { role: 'farmer', email: 'farmer@example.com' });
-    await addVerifiedBankAccount(farmer.user.id);
     await creditWalletBalance(farmer.user.id, 50000);
 
     const withdraw = () =>
       request(app)
         .post('/api/wallet/withdraw/initiate')
         .set(authHeader(farmer.accessToken))
-        .send({ amount: 20000 });
+        .send({ ...bankFields(), amount: 20000 });
 
     const results = await Promise.all([withdraw(), withdraw(), withdraw()]);
     const succeeded = results.filter((r) => r.status === 201);
@@ -320,20 +372,19 @@ describe('withdraw to bank', () => {
   });
 
   it('rejects an unauthenticated withdrawal request', async () => {
-    const res = await request(app).post('/api/wallet/withdraw/initiate').send({ amount: 1000 });
+    const res = await request(app).post('/api/wallet/withdraw/initiate').send({ ...bankFields(), amount: 1000 });
     expect(res.status).toBe(401);
   });
 
   it('a user can only see/act on their own wallet and withdrawal - never another user\'s', async () => {
     const farmer = await registerUser(app, { role: 'farmer', email: 'farmer@example.com' });
     const otherFarmer = await registerUser(app, { role: 'farmer', email: 'other@example.com' });
-    await addVerifiedBankAccount(farmer.user.id);
     await creditWalletBalance(farmer.user.id, 50000);
 
     const initRes = await request(app)
       .post('/api/wallet/withdraw/initiate')
       .set(authHeader(farmer.accessToken))
-      .send({ amount: 20000 });
+      .send({ ...bankFields(), amount: 20000 });
 
     const hijackAttempt = await request(app)
       .post(`/api/wallet/withdraw/${initRes.body.transactionId}/demo/complete`)
@@ -347,15 +398,53 @@ describe('withdraw to bank', () => {
     expect(farmerWallet.pendingWithdrawal).toBe(20000);
   });
 
-  it('the transaction/history endpoint includes the withdrawal', async () => {
+  it('a withdrawal never picks up another user\'s saved bank account', async () => {
     const farmer = await registerUser(app, { role: 'farmer', email: 'farmer@example.com' });
-    await addVerifiedBankAccount(farmer.user.id);
+    const otherFarmer = await registerUser(app, { role: 'farmer', email: 'other@example.com' });
+    await creditWalletBalance(farmer.user.id, 50000);
+    await Kyc.create({
+      user: otherFarmer.user.id,
+      bankDetails: { accountHolderName: 'Other Person', accountNumber: '999999999999', ifsc: 'HDFC0001111' },
+    });
+
+    // farmer has no saved account of their own, so useSavedAccount must fail
+    // rather than somehow resolving to otherFarmer's details.
+    const res = await request(app)
+      .post('/api/wallet/withdraw/initiate')
+      .set(authHeader(farmer.accessToken))
+      .send({ useSavedAccount: true, amount: 1000 });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('optionally saves the entered bank details for reuse via useSavedAccount', async () => {
+    const farmer = await registerUser(app, { role: 'farmer', email: 'farmer@example.com' });
     await creditWalletBalance(farmer.user.id, 50000);
 
     await request(app)
       .post('/api/wallet/withdraw/initiate')
       .set(authHeader(farmer.accessToken))
-      .send({ amount: 20000 });
+      .send({ ...bankFields(), amount: 10000, saveAccount: true });
+
+    const walletRes = await request(app).get('/api/wallet/me').set(authHeader(farmer.accessToken));
+    expect(walletRes.body.bankAccount.accountHolderName).toBe('Ramesh Meena');
+    expect(walletRes.body.bankAccount.accountNumberMasked).toBe('********9012');
+
+    const reuseRes = await request(app)
+      .post('/api/wallet/withdraw/initiate')
+      .set(authHeader(farmer.accessToken))
+      .send({ useSavedAccount: true, amount: 5000 });
+    expect(reuseRes.status).toBe(201);
+  });
+
+  it('the transaction/history endpoint includes the withdrawal', async () => {
+    const farmer = await registerUser(app, { role: 'farmer', email: 'farmer@example.com' });
+    await creditWalletBalance(farmer.user.id, 50000);
+
+    await request(app)
+      .post('/api/wallet/withdraw/initiate')
+      .set(authHeader(farmer.accessToken))
+      .send({ ...bankFields(), amount: 20000 });
 
     const listRes = await request(app)
       .get('/api/transactions?type=withdrawal')
