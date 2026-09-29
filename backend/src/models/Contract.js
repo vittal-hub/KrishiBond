@@ -14,6 +14,13 @@ const signatureSchema = new mongoose.Schema(
   {
     signedAt: Date,
     signatureName: String,
+    // Snapshotted from the signer's own User.signatureUrl at the moment they
+    // sign (see contractController.signContract) - never taken from request
+    // input, so it always reflects that party's own uploaded signature.
+    // Snapshotting (rather than referencing the live profile value) means a
+    // contract's signature image never changes retroactively if the user
+    // later re-uploads a different one on their profile.
+    signatureUrl: String,
   },
   { _id: false }
 );
@@ -28,6 +35,12 @@ const contractSchema = new mongoose.Schema(
     unit: { type: String, enum: ['kg', 'quintal', 'ton'], default: 'quintal' },
     agreedPricePerUnit: { type: Number },
     deliveryDate: { type: Date },
+    // Free-text village name for where the produce is being sourced from -
+    // deliberately not a dropdown/lookup (no canonical village dataset
+    // exists), unlike the State/District fields on User/Listing. Optional so
+    // existing contracts created before this field existed keep loading
+    // normally; new contracts collect it at creation time (CreateContract.jsx).
+    village: { type: String, trim: true, maxlength: 200 },
     terms: { type: String, trim: true },
     customClauses: { type: [String], default: [] },
     signatures: {

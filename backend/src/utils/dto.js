@@ -44,6 +44,7 @@ function toUserDTO(user) {
     location: obj.location,
     bio: obj.bio,
     avatarUrl: obj.avatarUrl,
+    signatureUrl: obj.signatureUrl,
     status: obj.status,
     emailVerified: obj.emailVerified,
     phoneVerified: obj.phoneVerified,
@@ -91,6 +92,7 @@ function toContractDTO(contract) {
     totalValue: pricePerUnit * (obj.quantity || 0),
     status: obj.status,
     deliveryDate: obj.deliveryDate,
+    village: obj.village,
     terms: obj.terms,
     customClauses: obj.customClauses || [],
     signatures: {

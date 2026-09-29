@@ -3,11 +3,13 @@ const http = require("http");
 const app = require("./app");
 const connectDB = require("./config/db");
 const initSockets = require("./sockets");
+const ensureDefaultCategories = require("./utils/ensureDefaultCategories");
 const logger = require("./utils/logger");
 const { port } = require("./config/env");
 
 async function start() {
   await connectDB();
+  await ensureDefaultCategories();
 
   const server = http.createServer(app);
   const io = initSockets(server);

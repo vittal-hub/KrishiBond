@@ -3,22 +3,56 @@ const { createContractSchema, escrowFundSchema } = require('../src/validators/co
 const { createCategorySchema } = require('../src/validators/categoryValidators');
 const { locationSchema } = require('../src/validators/locationSchema');
 
+const VALID_REGISTER_BODY = {
+  name: 'Ramesh Meena',
+  email: 'ramesh@example.com',
+  password: 'password123',
+  role: 'farmer',
+  phone: '9876543210',
+};
+
 describe('authValidators', () => {
   it('accepts a well-formed registration payload', () => {
-    const result = registerSchema.safeParse({
-      body: { name: 'Ramesh Meena', email: 'ramesh@example.com', password: 'password123', role: 'farmer' },
-    });
+    const result = registerSchema.safeParse({ body: VALID_REGISTER_BODY });
     expect(result.success).toBe(true);
   });
 
+  it('normalizes email to lowercase', () => {
+    const result = registerSchema.safeParse({ body: { ...VALID_REGISTER_BODY, email: 'Ramesh@Example.COM' } });
+    expect(result.success).toBe(true);
+    expect(result.data.body.email).toBe('ramesh@example.com');
+  });
+
   it.each([
-    ['missing email', { name: 'A', password: 'password123', role: 'farmer' }],
-    ['short password', { name: 'A', email: 'a@b.com', password: 'short', role: 'farmer' }],
-    ['invalid role', { name: 'A', email: 'a@b.com', password: 'password123', role: 'admin' }],
+    ['missing email', { name: 'A', password: 'password123', role: 'farmer', phone: '9876543210' }],
+    ['short password', { ...VALID_REGISTER_BODY, password: 'short' }],
+    ['invalid role', { ...VALID_REGISTER_BODY, role: 'admin' }],
+    ['all-digit name', { ...VALID_REGISTER_BODY, name: '123456' }],
+    ['all-symbol name', { ...VALID_REGISTER_BODY, name: '@@@@@@' }],
   ])('rejects %s', (_label, body) => {
     const result = registerSchema.safeParse({ body });
     expect(result.success).toBe(false);
   });
+
+  it.each([
+    ['too short', '123'],
+    ['9 digits', '123456789'],
+    ['12 digits', '123456789012'],
+    ['all letters', 'abcdefghij'],
+    ['starts with 5 (not a valid Indian mobile prefix)', '5123456789'],
+    ['11 digits', '12345678901'],
+  ])('rejects an invalid phone number: %s', (_label, phone) => {
+    const result = registerSchema.safeParse({ body: { ...VALID_REGISTER_BODY, phone } });
+    expect(result.success).toBe(false);
+  });
+
+  it.each(['9876543210', '6000000000', '7123456789', '8123456789'])(
+    'accepts a valid 10-digit Indian mobile number: %s',
+    (phone) => {
+      const result = registerSchema.safeParse({ body: { ...VALID_REGISTER_BODY, phone } });
+      expect(result.success).toBe(true);
+    }
+  );
 
   it('rejects an empty login password', () => {
     const result = loginSchema.safeParse({ body: { email: 'a@b.com', password: '' } });

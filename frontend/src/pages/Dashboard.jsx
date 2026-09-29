@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText, TrendingUp, Wallet, Clock, ArrowRight, Plus, CalendarClock, AlertCircle } from 'lucide-react';
+import { FileText, TrendingUp, Wallet, Clock, ArrowRight, Plus, CalendarClock, AlertCircle, MessageSquare, Bell } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useNotifications } from '../hooks/useNotifications.js';
 import { contractApi } from '../api/contractApi';
 import { marketplaceApi } from '../api/marketplaceApi';
 import { walletApi } from '../api/walletApi';
 import { transactionApi } from '../api/transactionApi';
+import { messageApi } from '../api/communicationApi';
 import StatusStamp from '../components/StatusStamp.jsx';
 import Loader from '../components/Loader.jsx';
 import TrendChart from '../components/charts/TrendChart.jsx';
@@ -84,12 +86,14 @@ function UpcomingMilestones({ milestones }) {
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const { unreadCount: unreadNotifications } = useNotifications();
   const [loading, setLoading] = useState(true);
   const [contracts, setContracts] = useState([]);
   const [matches, setMatches] = useState([]);
   const [wallet, setWallet] = useState(null);
   const [analyticsSeries, setAnalyticsSeries] = useState([]);
   const [milestones, setMilestones] = useState([]);
+  const [unreadMessages, setUnreadMessages] = useState(0);
 
   const isFarmer = user?.role === 'farmer';
 
@@ -97,12 +101,13 @@ export default function Dashboard() {
     let active = true;
     (async () => {
       try {
-        const [contractData, matchData, walletData, analyticsData, milestoneData] = await Promise.all([
+        const [contractData, matchData, walletData, analyticsData, milestoneData, threadData] = await Promise.all([
           contractApi.list(),
           marketplaceApi.matches().catch(() => ({ matches: [] })),
           walletApi.getMine().catch(() => ({ wallet: null })),
           transactionApi.getAnalytics(6).catch(() => ({ series: [] })),
           contractApi.upcomingMilestones().catch(() => ({ milestones: [] })),
+          messageApi.threads().catch(() => ({ threads: [] })),
         ]);
         if (!active) return;
         setContracts(contractData.contracts ?? []);
@@ -110,6 +115,7 @@ export default function Dashboard() {
         setWallet(walletData.wallet);
         setAnalyticsSeries(analyticsData.series ?? []);
         setMilestones(milestoneData.milestones ?? []);
+        setUnreadMessages((threadData.threads ?? []).reduce((sum, t) => sum + (t.unreadCount || 0), 0));
       } catch (error) {
         toast.error(getErrorMessage(error, 'Could not load your dashboard'));
       } finally {
@@ -157,20 +163,27 @@ export default function Dashboard() {
         )}
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={FileText} label="Active contracts" value={activeCount} accent="bg-canopy-50 text-canopy-700" />
-        <StatCard icon={Clock} label="Pending actions" value={pendingCount} accent="bg-harvest-50 text-harvest-700" />
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard
           icon={Wallet}
-          label={isFarmer ? 'Wallet balance' : 'Held in escrow'}
-          value={formatCurrency(isFarmer ? wallet?.balance : wallet?.inEscrow)}
+          label="Wallet balance"
+          value={formatCurrency(wallet?.balance)}
+          accent="bg-canopy-50 text-canopy-700"
+        />
+        <StatCard icon={FileText} label="Active contracts" value={activeCount} accent="bg-canopy-50 text-canopy-700" />
+        <StatCard icon={Clock} label="Pending proposals" value={pendingCount} accent="bg-harvest-50 text-harvest-700" />
+        <StatCard
+          icon={MessageSquare}
+          label="Unread messages"
+          value={unreadMessages}
           accent="bg-irrigation-50 text-irrigation-700"
         />
+        <StatCard icon={Bell} label="Notifications" value={unreadNotifications} accent="bg-clay-50 text-clay-600" />
         <StatCard
           icon={TrendingUp}
           label={isFarmer ? 'Fulfillment rate' : 'New matches'}
           value={isFarmer ? `${fulfillmentRate}%` : matches.length}
-          accent="bg-clay-50 text-clay-600"
+          accent="bg-info-50 text-info-700"
         />
       </div>
 

@@ -82,4 +82,26 @@
   .stamp-fulfilled { @apply border-irrigation-500 text-irrigation-700 bg-irrigation-50; }
   .stamp-disputed { @apply border-clay-500 text-clay-600 bg-clay-50; }
   .stamp-cancelled { @apply border-ink-faint text-ink-faint bg-ink/5; }
+
+  /* Flat status badge: a calmer alternative to the rotated .stamp, for
+     tables/lists (help tickets, disputes, payments) where a seal reads as
+     too playful. Always paired with text - never a color-only indicator -
+     for accessibility. */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold border;
+  }
+  .badge-neutral { @apply bg-ink/5 text-ink-soft border-ink/10; }
+  .badge-success { @apply bg-success-50 text-success-700 border-success-500/30; }
+  .badge-warning { @apply bg-warning-50 text-warning-700 border-warning-500/30; }
+  .badge-error { @apply bg-error-50 text-error-600 border-error-500/30; }
+  .badge-info { @apply bg-info-50 text-info-700 border-info-500/30; }
+
+  /* Inline alert banner (form-level errors, empty states, callouts). */
+  .alert {
+    @apply flex items-start gap-3 rounded-stub border p-4 text-sm;
+  }
+  .alert-success { @apply bg-success-50 border-success-500/25 text-success-700; }
+  .alert-warning { @apply bg-warning-50 border-warning-500/25 text-warning-700; }
+  .alert-error { @apply bg-error-50 border-error-500/25 text-error-600; }
+  .alert-info { @apply bg-info-50 border-info-500/25 text-info-700; }
 }

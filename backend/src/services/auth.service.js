@@ -1,5 +1,4 @@
 const crypto = require('crypto');
-const mongoose = require('mongoose');
 const User = require('../models/User');
 const ApiError = require('../utils/ApiError');
 const logger = require('../utils/logger');
@@ -7,7 +6,6 @@ const { nodeEnv, otp: otpConfig } = require('../config/env');
 const { issueTokenPair, verifyRefreshToken } = require('./token.service');
 const emailService = require('./email.service');
 
-const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 const RESET_PASSWORD_TTL_MS = 60 * 60 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
 
@@ -15,52 +13,67 @@ function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-async function register({ name, email, password, role, phone, location }) {
-  const verificationToken = crypto.randomBytes(32).toString('hex');
+function generateOtp() {
+  return String(crypto.randomInt(100000, 999999));
+}
 
+// Generates a fresh 6-digit OTP, hashes+stores it on the user (overwriting -
+// and so invalidating - any previous one), and emails it. Shared by both
+// register() and resendEmailOtp() so there is exactly one place this logic
+// lives. Caller is responsible for user.save().
+function assignEmailOtp(user) {
+  const otp = generateOtp();
+  user.emailVerificationOtpHash = hashToken(otp);
+  user.emailVerificationOtpExpires = new Date(Date.now() + otpConfig.expiresInMinutes * 60 * 1000);
+  user.emailVerificationOtpAttempts = 0;
+  return otp;
+}
+
+async function register({ name, email, password, role, phone, location }) {
   // Registration used to be 3 sequential round trips to MongoDB: a findOne()
   // pre-check for the duplicate email, a create(), and a second save() to
-  // attach the verification token + refresh-token session (issueTokenPair
-  // needs a persisted user id to sign against). On a distant/slow-to-wake
-  // free-tier DB connection each round trip can add real, visible latency to
-  // the response the user is waiting on.
+  // attach the verification token + refresh-token session. The email
+  // uniqueness check is redundant with the schema's unique index - it only
+  // needs to run (and cost a round trip) on the rare duplicate path, not on
+  // every registration - and the OTP can be generated up front and included
+  // directly in the create() call, keeping this back down to one write.
   //
-  // The email uniqueness check is redundant with the schema's unique index -
-  // it only needs to run (and cost a round trip) on the rare duplicate path,
-  // not on every registration. And since JWTs only need `_id`/`role` to sign,
-  // pre-generating the id lets the whole user (including the verification
-  // token and the first refresh-token session) be written in one insert.
-  const _id = new mongoose.Types.ObjectId();
-  const sessionHolder = { _id, role, refreshTokens: [] };
-  const { accessToken, refreshToken } = issueTokenPair(sessionHolder);
+  // Registration is also no longer where a session begins: the account is
+  // created in an unverified state and no JWTs are issued here at all - only
+  // verifyEmailOtp() (after the user proves they received the OTP) does
+  // that, which is what keeps a user off the authenticated dashboard until
+  // the required verification is actually complete.
+  const otp = generateOtp();
 
   let user;
   try {
     user = await User.create({
-      _id,
       name,
       email,
       password,
       role,
       phone,
       location,
-      emailVerificationToken: hashToken(verificationToken),
-      emailVerificationExpires: new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS),
-      refreshTokens: sessionHolder.refreshTokens,
+      emailVerificationOtpHash: hashToken(otp),
+      emailVerificationOtpExpires: new Date(Date.now() + otpConfig.expiresInMinutes * 60 * 1000),
     });
   } catch (err) {
     if (err.code === 11000) throw new ApiError(409, 'Email already registered');
     throw err;
   }
 
-  // Fire-and-forget: the account is already created and tokens already
-  // issued at this point, so a slow or unreachable SMTP provider must never
-  // delay or fail the registration response.
-  emailService.sendVerificationEmail(user, verificationToken).catch((err) => {
-    logger.error(`Failed to send verification email to ${user.email}: ${err.message}`);
+  // Fire-and-forget: the account is already created at this point, so a slow
+  // or unreachable SMTP provider must never delay or fail the registration
+  // response - the OTP screen's "resend" option covers the case where the
+  // email genuinely never arrives.
+  emailService.sendOtpEmail(user, otp).catch((err) => {
+    logger.error(`Failed to send registration OTP to ${user.email}: ${err.message}`);
   });
 
-  return { user, accessToken, refreshToken };
+  // Same dev-only bypass already used by sendOtp/forgotPassword: never
+  // present in production (see config/env.js), but lets the registration ->
+  // verify flow be tested end-to-end without a real mailbox in dev/CI.
+  return { user, devOtp: nodeEnv === 'production' ? undefined : otp };
 }
 
 async function login({ email, password }) {
@@ -133,35 +146,59 @@ async function logoutAll(userId) {
   await User.findByIdAndUpdate(userId, { refreshTokens: [] });
 }
 
-async function verifyEmail(token) {
-  const hashed = hashToken(token);
-  const user = await User.findOne({
-    emailVerificationToken: hashed,
-    emailVerificationExpires: { $gt: new Date() },
-  }).select('+emailVerificationToken +emailVerificationExpires');
+/**
+ * Verifies the OTP sent at registration (or via resendEmailOtp) and - only
+ * on success - issues the user's first session. This is the sole point at
+ * which a newly registered account actually becomes authenticated.
+ */
+async function verifyEmailOtp(email, otp) {
+  const user = await User.findOne({ email }).select(
+    '+emailVerificationOtpHash +emailVerificationOtpExpires +emailVerificationOtpAttempts +refreshTokens'
+  );
+  if (!user) throw new ApiError(400, 'Incorrect or expired OTP');
+  if (user.emailVerified) throw new ApiError(400, 'Email is already verified');
+  if (!user.emailVerificationOtpHash || !user.emailVerificationOtpExpires || user.emailVerificationOtpExpires < new Date()) {
+    throw new ApiError(400, 'OTP has expired, please request a new one');
+  }
+  if (user.emailVerificationOtpAttempts >= OTP_MAX_ATTEMPTS) {
+    throw new ApiError(429, 'Too many incorrect attempts, please request a new OTP');
+  }
 
-  if (!user) throw new ApiError(400, 'Verification link is invalid or has expired');
+  if (hashToken(otp) !== user.emailVerificationOtpHash) {
+    user.emailVerificationOtpAttempts += 1;
+    await user.save();
+    throw new ApiError(400, 'Incorrect OTP');
+  }
 
   user.emailVerified = true;
-  user.emailVerificationToken = undefined;
-  user.emailVerificationExpires = undefined;
+  user.emailVerificationOtpHash = undefined;
+  user.emailVerificationOtpExpires = undefined;
+  user.emailVerificationOtpAttempts = 0;
+
+  const { accessToken, refreshToken } = issueTokenPair(user);
   await user.save();
-  return user;
+
+  return { user, accessToken, refreshToken };
 }
 
-async function resendVerification(userId) {
-  const user = await User.findById(userId);
-  if (!user) throw new ApiError(404, 'User not found');
-  if (user.emailVerified) throw new ApiError(400, 'Email is already verified');
+/**
+ * Re-sends a fresh OTP, invalidating whatever one was issued before.
+ * Deliberately never reveals whether the email exists or is already
+ * verified (same non-enumerable pattern as forgotPassword) - the caller
+ * always gets the same generic acknowledgement.
+ */
+async function resendEmailOtp(email) {
+  const user = await User.findOne({ email });
+  if (!user || user.emailVerified) return { devOtp: undefined };
 
-  const verificationToken = crypto.randomBytes(32).toString('hex');
-  user.emailVerificationToken = hashToken(verificationToken);
-  user.emailVerificationExpires = new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS);
+  const otp = assignEmailOtp(user);
   await user.save();
 
-  emailService.sendVerificationEmail(user, verificationToken).catch((err) => {
-    logger.error(`Failed to send verification email to ${user.email}: ${err.message}`);
+  emailService.sendOtpEmail(user, otp).catch((err) => {
+    logger.error(`Failed to resend registration OTP to ${user.email}: ${err.message}`);
   });
+
+  return { devOtp: nodeEnv === 'production' ? undefined : otp };
 }
 
 async function forgotPassword(email) {
@@ -241,8 +278,8 @@ module.exports = {
   refresh,
   logout,
   logoutAll,
-  verifyEmail,
-  resendVerification,
+  verifyEmailOtp,
+  resendEmailOtp,
   forgotPassword,
   resetPassword,
   sendOtp,

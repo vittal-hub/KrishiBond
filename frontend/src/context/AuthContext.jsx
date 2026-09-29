@@ -98,12 +98,24 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  // Registration no longer starts a session by itself - the backend creates
+  // an unverified account and emails an OTP, and only verifyEmailOtp (below)
+  // actually logs the user in. This is what keeps a new user off the
+  // authenticated dashboard until they've proven they received the code.
   const register = async (payload) => {
     const data = await authApi.register(payload);
+    toast.success("Check your email for a verification code");
+    return data; // { email, message, devOtp? }
+  };
+
+  const verifyEmailOtp = async ({ email, otp }) => {
+    const data = await authApi.verifyEmailOtp({ email, otp });
     persistSession(data);
-    toast.success("Account created — check your email to verify your address");
+    toast.success(`Welcome, ${data.user.name.split(" ")[0]}`);
     return data.user;
   };
+
+  const resendEmailOtp = (email) => authApi.resendEmailOtp(email);
 
   const logout = async () => {
     try {
@@ -130,6 +142,8 @@ export function AuthProvider({ children }) {
     loading,
     login,
     register,
+    verifyEmailOtp,
+    resendEmailOtp,
     logout,
     updateUser,
   };

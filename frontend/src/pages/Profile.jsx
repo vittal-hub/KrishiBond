@@ -1,14 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
-import { BadgeCheck, ShieldAlert, MailWarning, PhoneCall, Bell } from 'lucide-react';
+import { BadgeCheck, ShieldAlert, MailWarning, PhoneCall, Bell, PenLine } from 'lucide-react';
 import api from '../api/axios';
 import { authApi } from '../api/authApi';
 import { kycApi } from '../api/kycApi';
+import { userApi } from '../api/userApi';
 import { notificationApi } from '../api/communicationApi';
 import { useAuth } from '../context/AuthContext.jsx';
 import { getErrorMessage } from '../utils/errorMessage';
 import LocationFields from '../components/LocationFields.jsx';
+
+// Same 10-digit Indian mobile format the backend enforces (see
+// backend/src/validators/commonSchemas.js).
+const PHONE_PATTERN = /^[6-9]\d{9}$/;
+const NAME_PATTERN = /[A-Za-z]/;
 
 const NOTIFICATION_CATEGORIES = [
   { key: 'contract', label: 'Contract updates', hint: 'Proposals, signatures, status changes' },
@@ -56,12 +62,31 @@ function ProfileForm({ user, updateUser }) {
     <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
       <div>
         <label className="label" htmlFor="name">Full name</label>
-        <input id="name" className="input-field" {...register('name', { required: 'Name is required' })} />
+        <input
+          id="name"
+          className="input-field"
+          {...register('name', {
+            required: 'Name is required',
+            minLength: { value: 2, message: 'Name must be at least 2 characters' },
+            maxLength: { value: 100, message: 'Name is too long' },
+            pattern: { value: NAME_PATTERN, message: 'Name must contain at least one letter' },
+          })}
+        />
         {errors.name && <p className="text-xs text-clay-500 mt-1">{errors.name.message}</p>}
       </div>
       <div>
         <label className="label" htmlFor="phone">Phone</label>
-        <input id="phone" className="input-field" {...register('phone', { required: 'Phone is required' })} />
+        <input
+          id="phone"
+          type="tel"
+          inputMode="numeric"
+          maxLength={10}
+          className="input-field"
+          {...register('phone', {
+            required: 'Phone is required',
+            pattern: { value: PHONE_PATTERN, message: 'Enter a valid 10-digit Indian mobile number' },
+          })}
+        />
         {errors.phone && <p className="text-xs text-clay-500 mt-1">{errors.phone.message}</p>}
       </div>
       <LocationFields register={register} watch={watch} setValue={setValue} errors={errors} />
@@ -77,20 +102,35 @@ function ProfileForm({ user, updateUser }) {
 }
 
 function VerificationPanel({ user }) {
-  const [sendingEmail, setSendingEmail] = useState(false);
+  const { resendEmailOtp, verifyEmailOtp } = useAuth();
+  const [sendingEmailOtp, setSendingEmailOtp] = useState(false);
+  const [emailOtpSent, setEmailOtpSent] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
   const [sendingOtp, setSendingOtp] = useState(false);
   const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm();
+  const emailOtpForm = useForm();
 
-  const resendVerification = async () => {
-    setSendingEmail(true);
+  const sendEmailOtp = async () => {
+    setSendingEmailOtp(true);
     try {
-      await authApi.resendVerification();
-      toast.success('Verification email sent');
+      const data = await resendEmailOtp(user.email);
+      setEmailOtpSent(true);
+      if (data.devOtp) toast.success(`Dev mode - OTP: ${data.devOtp}`, { duration: 8000 });
+      else toast.success('Verification code sent to your email');
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Could not send verification email'));
+      toast.error(getErrorMessage(error, 'Could not send verification code'));
     } finally {
-      setSendingEmail(false);
+      setSendingEmailOtp(false);
+    }
+  };
+
+  const onVerifyEmailOtp = async ({ otp }) => {
+    try {
+      await verifyEmailOtp({ email: user.email, otp });
+      emailOtpForm.reset();
+      setEmailOtpSent(false);
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Incorrect or expired code'));
     }
   };
 
@@ -124,15 +164,30 @@ function VerificationPanel({ user }) {
     <div className="stub-card p-6 mt-6">
       <h2 className="font-display text-lg font-semibold">Verification</h2>
       <div className="mt-4 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <MailWarning className="w-4 h-4 text-ink-faint" />
-            <VerificationBadge verified={user?.emailVerified} label="Email" />
+        <div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <MailWarning className="w-4 h-4 text-ink-faint" />
+              <VerificationBadge verified={user?.emailVerified} label="Email" />
+            </div>
+            {!user?.emailVerified && (
+              <button onClick={sendEmailOtp} disabled={sendingEmailOtp} className="btn-secondary text-xs px-3 py-1.5">
+                {sendingEmailOtp ? 'Sending…' : emailOtpSent ? 'Resend code' : 'Send code'}
+              </button>
+            )}
           </div>
-          {!user?.emailVerified && (
-            <button onClick={resendVerification} disabled={sendingEmail} className="btn-secondary text-xs px-3 py-1.5">
-              {sendingEmail ? 'Sending…' : 'Resend link'}
-            </button>
+          {!user?.emailVerified && emailOtpSent && (
+            <form onSubmit={emailOtpForm.handleSubmit(onVerifyEmailOtp)} className="flex items-center gap-2 mt-3">
+              <input
+                className="input-field"
+                placeholder="6-digit code"
+                maxLength={6}
+                {...emailOtpForm.register('otp', { required: true, pattern: /^\d{6}$/ })}
+              />
+              <button type="submit" disabled={emailOtpForm.formState.isSubmitting} className="btn-primary text-xs px-3 py-2 whitespace-nowrap">
+                Verify
+              </button>
+            </form>
           )}
         </div>
 
@@ -345,6 +400,66 @@ function NotificationPreferencesPanel() {
   );
 }
 
+function SignaturePanel({ user, updateUser }) {
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = React.useRef(null);
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    try {
+      const { signatureUrl } = await userApi.uploadSignature(file);
+      updateUser({ signatureUrl });
+      toast.success('Signature saved');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Could not upload your signature'));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="stub-card p-6 mt-6">
+      <h2 className="font-display text-lg font-semibold flex items-center gap-2">
+        <PenLine className="w-4.5 h-4.5 text-canopy-600" /> My signature
+      </h2>
+      <p className="text-sm text-ink-faint mt-1">
+        Upload once and it's automatically used whenever you digitally sign a contract - no need to re-upload each time.
+      </p>
+
+      <div className="mt-4 flex items-center gap-4">
+        <div className="w-40 h-20 rounded-stub border border-dashed border-ink/20 bg-paper flex items-center justify-center overflow-hidden">
+          {user?.signatureUrl ? (
+            <img src={user.signatureUrl} alt="Your signature" className="max-w-full max-h-full object-contain" />
+          ) : (
+            <span className="text-xs text-ink-faint">No signature yet</span>
+          )}
+        </div>
+        <div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="btn-secondary text-xs px-3 py-1.5"
+          >
+            {uploading ? 'Uploading…' : user?.signatureUrl ? 'Replace signature' : 'Upload signature'}
+          </button>
+          <p className="text-[11px] text-ink-faint mt-1.5">PNG, JPG, or WEBP · up to 5MB</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Profile() {
   const { user, updateUser } = useAuth();
 
@@ -367,6 +482,7 @@ export default function Profile() {
       </div>
 
       <VerificationPanel user={user} />
+      <SignaturePanel user={user} updateUser={updateUser} />
       <KycPanel />
       <NotificationPreferencesPanel />
     </div>

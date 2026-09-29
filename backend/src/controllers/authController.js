@@ -6,9 +6,15 @@ const { setRefreshCookie, clearRefreshCookie } = require('../services/token.serv
 const { cookie: cookieConfig } = require('../config/env');
 
 const register = asyncHandler(async (req, res) => {
-  const { user, accessToken, refreshToken } = await authService.register(req.body);
-  setRefreshCookie(res, refreshToken);
-  res.status(201).json({ success: true, user: toUserDTO(user), accessToken });
+  // No session is issued here - the account exists but is unverified until
+  // verifyEmailOtp succeeds, so there is nothing to log the caller into yet.
+  const { user, devOtp } = await authService.register(req.body);
+  res.status(201).json({
+    success: true,
+    message: 'Account created. Enter the code we emailed you to finish signing in.',
+    email: user.email,
+    devOtp,
+  });
 });
 
 const login = asyncHandler(async (req, res) => {
@@ -41,14 +47,24 @@ const me = asyncHandler(async (req, res) => {
   res.json({ success: true, user: toUserDTO(req.user) });
 });
 
-const verifyEmail = asyncHandler(async (req, res) => {
-  const user = await authService.verifyEmail(req.params.token);
-  res.json({ success: true, message: 'Email verified successfully', user: toUserDTO(user) });
+// Verifies the registration OTP and - on success - issues the user's first
+// session. Public (no `protect`): a user who just registered has no token
+// yet. Also reused by an already-authenticated user re-verifying from their
+// profile - the fresh token pair it returns is simply re-persisted in that
+// case too, which is harmless.
+const verifyEmailOtp = asyncHandler(async (req, res) => {
+  const { user, accessToken, refreshToken } = await authService.verifyEmailOtp(req.body.email, req.body.otp);
+  setRefreshCookie(res, refreshToken);
+  res.json({ success: true, user: toUserDTO(user), accessToken });
 });
 
-const resendVerification = asyncHandler(async (req, res) => {
-  await authService.resendVerification(req.user._id);
-  res.json({ success: true, message: 'Verification email sent' });
+const resendEmailOtp = asyncHandler(async (req, res) => {
+  const { devOtp } = await authService.resendEmailOtp(req.body.email);
+  res.json({
+    success: true,
+    message: 'If that email is pending verification, a new code has been sent',
+    devOtp,
+  });
 });
 
 const forgotPassword = asyncHandler(async (req, res) => {
@@ -83,8 +99,8 @@ module.exports = {
   logout,
   logoutAll,
   me,
-  verifyEmail,
-  resendVerification,
+  verifyEmailOtp,
+  resendEmailOtp,
   forgotPassword,
   resetPassword,
   sendOtp,

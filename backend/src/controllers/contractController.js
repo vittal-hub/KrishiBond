@@ -59,6 +59,7 @@ const createContract = asyncHandler(async (req, res) => {
     unit,
     agreedPricePerUnit,
     deliveryDate,
+    village,
     terms,
     startDate,
     endDate,
@@ -86,6 +87,7 @@ const createContract = asyncHandler(async (req, res) => {
     unit,
     agreedPricePerUnit,
     deliveryDate,
+    village,
     terms,
     startDate,
     endDate,
@@ -289,10 +291,14 @@ const signContract = asyncHandler(async (req, res) => {
   assertParty(contract, req.user._id);
   if (contract.status !== 'pending') throw new ApiError(400, 'Only pending contracts can be signed');
 
+  // `signatureUrl` always comes from the authenticated user's own saved
+  // profile signature, never from the request body - a party can only ever
+  // sign with their own signature, not one submitted directly by the client.
   const side = contract.farmer.toString() === req.user._id.toString() ? 'farmer' : 'buyer';
   contract.signatures[side] = {
     signedAt: new Date(),
     signatureName: req.body.signatureName || req.user.name,
+    signatureUrl: req.user.signatureUrl || undefined,
   };
   await contract.save();
   await logEvent(contract._id, req.user._id, 'contract_signed', `${req.user.name} signed the contract`);

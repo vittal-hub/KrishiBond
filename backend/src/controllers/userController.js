@@ -2,6 +2,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const User = require('../models/User');
 const { toUserDTO, toPublicUserDTO } = require('../utils/dto');
+const { uploadImages } = require('../services/upload.service');
 
 const updateMe = asyncHandler(async (req, res) => {
   const allowed = ['name', 'phone', 'location', 'bio'];
@@ -22,6 +23,20 @@ const updateMe = asyncHandler(async (req, res) => {
   res.json({ success: true, user: toUserDTO(user) });
 });
 
+// One-time (re-uploadable) profile signature, later snapshotted onto every
+// contract this user signs (see contractController.signContract). Reuses
+// the same Cloudinary upload pipeline and image constraints (jpeg/png/webp,
+// 5MB) already used for listing photos - no new upload infrastructure.
+const uploadSignature = asyncHandler(async (req, res) => {
+  if (!req.file) throw new ApiError(400, 'No file was provided');
+
+  const [url] = await uploadImages([req.file], `krishibond/signatures/${req.user._id}`);
+  req.user.signatureUrl = url;
+  await req.user.save();
+
+  res.json({ success: true, signatureUrl: url });
+});
+
 const getUserById = asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.id);
   if (!user) throw new ApiError(404, 'User not found');
@@ -30,4 +45,4 @@ const getUserById = asyncHandler(async (req, res) => {
   res.json({ success: true, user: isSelfOrAdmin ? toUserDTO(user) : toPublicUserDTO(user) });
 });
 
-module.exports = { updateMe, getUserById };
+module.exports = { updateMe, getUserById, uploadSignature };

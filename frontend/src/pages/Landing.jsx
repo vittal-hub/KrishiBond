@@ -6,9 +6,7 @@ import WhyKrishiBond from "../components/landing/WhyKrishiBond.jsx";
 import HowItWorks from "../components/landing/HowItWorks.jsx";
 import Benefits from "../components/landing/Benefits.jsx";
 import PlatformFeatures from "../components/landing/PlatformFeatures.jsx";
-import StatsCounter from "../components/landing/StatsCounter.jsx";
 import WhyChooseUs from "../components/landing/WhyChooseUs.jsx";
-import Testimonials from "../components/landing/Testimonials.jsx";
 import FAQAccordion from "../components/landing/FAQAccordion.jsx";
 import CTASection from "../components/landing/CTASection.jsx";
 import LandingFooter from "../components/landing/LandingFooter.jsx";
@@ -95,9 +93,7 @@ export default function Landing() {
         <HowItWorks />
         <Benefits />
         <PlatformFeatures />
-        <StatsCounter />
         <WhyChooseUs />
-        <Testimonials />
         <FAQAccordion />
         <CTASection />
       </main>

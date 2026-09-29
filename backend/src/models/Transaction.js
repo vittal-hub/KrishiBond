@@ -8,7 +8,7 @@ const transactionSchema = new mongoose.Schema(
     contract: { type: mongoose.Schema.Types.ObjectId, ref: 'Contract' },
     type: {
       type: String,
-      enum: ['escrow_fund', 'escrow_release', 'refund', 'platform_fee'],
+      enum: ['escrow_fund', 'escrow_release', 'refund', 'platform_fee', 'wallet_topup'],
       required: true,
     },
     amount: { type: Number, required: true },

@@ -1,7 +1,40 @@
 import React from 'react';
-import { Document, Page, Text, View, pdf } from '@react-pdf/renderer';
+import { Document, Page, Text, View, Image, pdf } from '@react-pdf/renderer';
 import { formatCurrency, formatDate } from '../utils/format';
 import { PdfHeader, PdfFooter, Section, FieldRow, styles, COLORS } from './PdfBrand.jsx';
+
+// Signature block shared by both parties: an uploaded signature image when
+// the signer has one on file (see Profile > My signature), otherwise the
+// typed name they signed with - either way name/date always show underneath
+// so the block reads correctly even for a not-yet-signed party.
+function SignatureBlock({ role, signature, fallbackName }) {
+  return (
+    <View style={styles.signBox} wrap={false}>
+      <Text style={{ fontSize: 8, color: COLORS.inkFaint, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
+        {role}
+      </Text>
+      <View style={{ height: 46, justifyContent: 'flex-end', marginBottom: 4 }}>
+        {signature?.signatureUrl ? (
+          // Only `width` is set (no height) so react-pdf scales the image
+          // proportionally from its natural dimensions instead of stretching
+          // it - this is what keeps the aspect ratio correct regardless of
+          // how the source PNG/JPG was cropped.
+          <Image src={signature.signatureUrl} style={{ width: 130, maxHeight: 46, objectFit: 'contain' }} />
+        ) : (
+          <Text style={{ fontFamily: 'Helvetica-Oblique', fontSize: 15 }}>
+            {signature?.signatureName || fallbackName || ''}
+          </Text>
+        )}
+      </View>
+      <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 10 }}>
+        {signature?.signatureName || fallbackName}
+      </Text>
+      <Text style={{ color: COLORS.inkFaint, fontSize: 8, marginTop: 2 }}>
+        {signature?.signedAt ? `Signed ${formatDate(signature.signedAt)}` : 'Not signed'}
+      </Text>
+    </View>
+  );
+}
 
 function ContractPdfDocument({ contract }) {
   return (
@@ -29,6 +62,12 @@ function ContractPdfDocument({ contract }) {
           <FieldRow label="Delivery date" value={formatDate(contract.deliveryDate)} />
         </Section>
 
+        {contract.village && (
+          <Section title="Farming Location">
+            <FieldRow label="Village" value={contract.village} />
+          </Section>
+        )}
+
         {contract.terms && (
           <Section title="Terms & Notes">
             <Text>{contract.terms}</Text>
@@ -50,20 +89,12 @@ function ContractPdfDocument({ contract }) {
           <FieldRow label="Current status" value={contract.status} />
         </Section>
 
-        <View style={styles.signRow} wrap={false}>
-          <View style={styles.signBox}>
-            <Text>{contract.signatures?.farmer?.signatureName || contract.farmerName}</Text>
-            <Text style={{ color: COLORS.inkFaint, fontSize: 8, marginTop: 2 }}>
-              Farmer signature {contract.signatures?.farmer ? `· ${formatDate(contract.signatures.farmer.signedAt)}` : '(not signed)'}
-            </Text>
+        <Section title="Signatures">
+          <View style={styles.signRow}>
+            <SignatureBlock role="Farmer" signature={contract.signatures?.farmer} fallbackName={contract.farmerName} />
+            <SignatureBlock role="Buyer" signature={contract.signatures?.buyer} fallbackName={contract.buyerName} />
           </View>
-          <View style={styles.signBox}>
-            <Text>{contract.signatures?.buyer?.signatureName || contract.buyerName}</Text>
-            <Text style={{ color: COLORS.inkFaint, fontSize: 8, marginTop: 2 }}>
-              Buyer signature {contract.signatures?.buyer ? `· ${formatDate(contract.signatures.buyer.signedAt)}` : '(not signed)'}
-            </Text>
-          </View>
-        </View>
+        </Section>
 
         <PdfFooter />
       </Page>

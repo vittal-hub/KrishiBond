@@ -10,6 +10,11 @@ const createContractSchema = z.object({
     unit: z.enum(['kg', 'quintal', 'ton']).optional(),
     agreedPricePerUnit: z.number().positive().optional(),
     deliveryDate: z.string().optional(),
+    // Optional at the schema level (some creation paths - e.g. accepting a
+    // bid - don't collect it), but rejects whitespace-only and unreasonably
+    // long values when it is provided. CreateContract.jsx makes it a
+    // required field in the UI for new proposals.
+    village: z.string().trim().min(1, 'Village cannot be empty').max(200, 'Village name is too long').optional(),
     terms: z.string().optional(),
     startDate: z.string().optional(),
     endDate: z.string().optional(),

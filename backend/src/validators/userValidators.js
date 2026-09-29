@@ -1,10 +1,11 @@
 const { z } = require('zod');
 const { locationSchema } = require('./locationSchema');
+const { phoneSchema, nameSchema } = require('./commonSchemas');
 
 const updateMeSchema = z.object({
   body: z.object({
-    name: z.string().min(2).optional(),
-    phone: z.string().min(6).optional(),
+    name: nameSchema.optional(),
+    phone: phoneSchema.optional(),
     bio: z.string().max(500).optional(),
     location: locationSchema,
   }),

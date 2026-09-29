@@ -44,10 +44,29 @@ export default {
           500: '#B4502A',
           600: '#8E3E20',
         },
+        // Semantic aliases onto the same agricultural palette above, so new
+        // code can reach for a meaning ("primary", "success") instead of a
+        // hue name, without renaming (and risking) every existing
+        // canopy/harvest/clay/irrigation class reference across the app.
+        primary: {
+          50: '#EAF0EA', 100: '#CFDDCF', 300: '#7FA07F',
+          500: '#3E6B41', 600: '#2F5233', 700: '#25401E', 900: '#152A17',
+        },
+        secondary: {
+          50: '#FBF1DF', 200: '#EED2A0', 400: '#DDAA55', 500: '#C98A2C', 600: '#A96E1D', 700: '#835216',
+        },
+        success: { 50: '#EAF0EA', 500: '#3E6B41', 600: '#2F5233', 700: '#25401E' },
+        warning: { 50: '#FBF1DF', 400: '#DDAA55', 500: '#C98A2C', 700: '#835216' },
+        error: { 50: '#F8E9E1', 400: '#D07E52', 500: '#B4502A', 600: '#8E3E20' },
+        info: { 50: '#E7F0F2', 300: '#8DB6BF', 500: '#3A6B7A', 600: '#2C5561', 700: '#20404A' },
       },
       fontFamily: {
-        display: ['"Fraunces"', 'ui-serif', 'Georgia', 'serif'],
-        body: ['"Public Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        // One primary family for both headings and body text (display and
+        // body previously differed - Fraunces serif + Public Sans - now
+        // unified on a single modern, highly-readable sans per the redesign
+        // brief). Weight/size still carries the heading vs body distinction.
+        display: ['"Plus Jakarta Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        body: ['"Plus Jakarta Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         mono: ['"IBM Plex Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       boxShadow: {

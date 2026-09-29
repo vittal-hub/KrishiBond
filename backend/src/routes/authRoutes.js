@@ -7,7 +7,8 @@ const {
   loginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
-  verifyEmailParamsSchema,
+  verifyEmailOtpSchema,
+  resendEmailOtpSchema,
   verifyOtpSchema,
 } = require('../validators/authValidators');
 const ctrl = require('../controllers/authController');
@@ -21,8 +22,11 @@ router.post('/logout', protect, ctrl.logout);
 router.post('/logout-all', protect, ctrl.logoutAll);
 router.get('/me', protect, ctrl.me);
 
-router.get('/verify-email/:token', validate(verifyEmailParamsSchema), ctrl.verifyEmail);
-router.post('/resend-verification', protect, authLimiter, ctrl.resendVerification);
+// Public: a user who just registered has no session yet to authenticate
+// these with. verifyEmailOtp is also reused by an already-logged-in user
+// re-verifying from their profile.
+router.post('/verify-email-otp', authLimiter, validate(verifyEmailOtpSchema), ctrl.verifyEmailOtp);
+router.post('/resend-email-otp', authLimiter, validate(resendEmailOtpSchema), ctrl.resendEmailOtp);
 
 router.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), ctrl.forgotPassword);
 router.post('/reset-password/:token', authLimiter, validate(resetPasswordSchema), ctrl.resetPassword);

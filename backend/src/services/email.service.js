@@ -34,16 +34,6 @@ async function sendMail({ to, subject, html, text }) {
   }
 }
 
-function sendVerificationEmail(user, token) {
-  const link = `${clientUrl}/verify-email/${token}`;
-  return sendMail({
-    to: user.email,
-    subject: 'Verify your KrishiBond email',
-    text: `Hi ${user.name}, verify your email: ${link} (expires in 24 hours)`,
-    html: `<p>Hi ${user.name},</p><p>Please verify your email to activate your KrishiBond account.</p><p><a href="${link}">Verify email</a></p><p>This link expires in 24 hours.</p>`,
-  });
-}
-
 function sendPasswordResetEmail(user, token) {
   const link = `${clientUrl}/reset-password/${token}`;
   return sendMail({
@@ -86,7 +76,6 @@ function sendNotificationEmail(user, { category, message, link }) {
 
 module.exports = {
   sendMail,
-  sendVerificationEmail,
   sendPasswordResetEmail,
   sendOtpEmail,
   sendNotificationEmail,

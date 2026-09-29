@@ -122,6 +122,17 @@ export default function CreateContract() {
         </div>
 
         <div>
+          <label className="label" htmlFor="village">Village</label>
+          <input
+            id="village"
+            className="input-field"
+            placeholder="Enter village name"
+            {...register('village', { required: 'Village is required', maxLength: { value: 200, message: 'Village name is too long' } })}
+          />
+          {errors.village && <p className="text-xs text-clay-500 mt-1">{errors.village.message}</p>}
+        </div>
+
+        <div>
           <label className="label" htmlFor="deliveryDate">Expected delivery date</label>
           <input
             id="deliveryDate"

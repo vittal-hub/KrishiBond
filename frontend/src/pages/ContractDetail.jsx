@@ -333,6 +333,12 @@ export default function ContractDetail() {
               <p className="text-xs text-ink-faint">Delivery date</p>
               <p className="text-sm font-semibold mt-0.5">{formatDate(contract.deliveryDate)}</p>
             </div>
+            {contract.village && (
+              <div>
+                <p className="text-xs text-ink-faint">Village</p>
+                <p className="text-sm font-semibold mt-0.5">{contract.village}</p>
+              </div>
+            )}
           </div>
 
           {contract.terms && (
@@ -363,7 +369,24 @@ export default function ContractDetail() {
                 {!mySignature && (
                   <button
                     disabled={actionLoading}
-                    onClick={() => runAction(() => contractApi.sign(id, user?.name), 'You signed the contract')}
+                    onClick={() => {
+                      if (!user?.signatureUrl) {
+                        toast(
+                          (t) => (
+                            <span className="text-sm">
+                              Upload a signature in your{' '}
+                              <Link to="/profile" onClick={() => toast.dismiss(t.id)} className="underline font-medium">
+                                profile
+                              </Link>{' '}
+                              before signing.
+                            </span>
+                          ),
+                          { icon: '✍️', duration: 6000 }
+                        );
+                        return;
+                      }
+                      runAction(() => contractApi.sign(id, user?.name), 'You signed the contract');
+                    }}
                     className="btn-secondary"
                   >
                     <PenLine className="w-4 h-4" /> Sign contract

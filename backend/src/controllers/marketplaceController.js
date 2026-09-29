@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const Listing = require('../models/Listing');
+const Category = require('../models/Category');
 const Contract = require('../models/Contract');
 const { toListingDTO } = require('../utils/dto');
 const { uploadImages } = require('../services/upload.service');
@@ -17,6 +18,17 @@ const SORT_MAP = {
 };
 
 const LISTING_STATUSES = ['open', 'matched', 'closed'];
+
+// The frontend dropdown only ever offers real, active category ids, but the
+// backend can't trust that a request actually came from it - without this, a
+// crafted request could set `category` to an arbitrary/nonexistent ObjectId
+// and Mongoose would happily store the dangling reference.
+async function assertValidCategory(categoryId) {
+  if (categoryId === undefined || categoryId === null || categoryId === '') return;
+  if (!mongoose.isValidObjectId(categoryId)) throw new ApiError(400, 'Invalid category');
+  const category = await Category.findOne({ _id: categoryId, isActive: true });
+  if (!category) throw new ApiError(400, 'Unknown or inactive category');
+}
 
 const searchListings = asyncHandler(async (req, res) => {
   const {
@@ -83,6 +95,7 @@ const searchListings = asyncHandler(async (req, res) => {
 
 const createListing = asyncHandler(async (req, res) => {
   if (req.user.role !== 'farmer') throw new ApiError(403, 'Only farmers can create listings');
+  await assertValidCategory(req.body.category);
   const listing = await Listing.create({ ...req.body, owner: req.user._id });
   await listing.populate('owner', 'name role location');
   await listing.populate('category', 'name slug');
@@ -118,6 +131,7 @@ const updateListing = asyncHandler(async (req, res) => {
   if (listing.owner.toString() !== req.user._id.toString()) {
     throw new ApiError(403, 'You do not own this listing');
   }
+  await assertValidCategory(req.body.category);
   Object.assign(listing, req.body);
   await listing.save();
   await listing.populate('owner', 'name role location');

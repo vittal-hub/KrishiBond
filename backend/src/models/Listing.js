@@ -30,5 +30,9 @@ const listingSchema = new mongoose.Schema(
 listingSchema.index({ cropType: 1, 'location.state': 1, 'location.district': 1 });
 listingSchema.index({ cropType: 'text', description: 'text' });
 listingSchema.index({ favouritedBy: 1 });
+// Every marketplace/dashboard "matches" query filters by status first (see
+// marketplaceController.getMatches/searchListings) and sorts by recency -
+// without this, those queries fall back to a full collection scan.
+listingSchema.index({ status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Listing', listingSchema);

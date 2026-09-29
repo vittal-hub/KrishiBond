@@ -22,15 +22,24 @@ const userSchema = new mongoose.Schema(
     },
     bio: { type: String, trim: true, maxlength: 500 },
     avatarUrl: { type: String },
+    // Snapshot-free reference to the user's uploaded signature image
+    // (Cloudinary URL) - set once via the profile "My signature" upload, then
+    // reused (and separately snapshotted onto the contract) every time this
+    // user digitally signs a contract. See contractController.signContract.
+    signatureUrl: { type: String },
     status: { type: String, enum: ['active', 'suspended', 'deleted'], default: 'active' },
 
     refreshTokens: { type: [refreshTokenSchema], default: [], select: false },
     resetPasswordToken: { type: String, select: false },
     resetPasswordExpires: { type: Date, select: false },
 
+    // Email verification is OTP-based (registration blocks on it - see
+    // auth.service.js register()/verifyEmailOtp()), mirroring the existing
+    // phone-OTP fields below rather than introducing a second pattern.
     emailVerified: { type: Boolean, default: false },
-    emailVerificationToken: { type: String, select: false },
-    emailVerificationExpires: { type: Date, select: false },
+    emailVerificationOtpHash: { type: String, select: false },
+    emailVerificationOtpExpires: { type: Date, select: false },
+    emailVerificationOtpAttempts: { type: Number, default: 0, select: false },
 
     phoneVerified: { type: Boolean, default: false },
     otpHash: { type: String, select: false },
