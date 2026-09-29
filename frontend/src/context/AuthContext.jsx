@@ -98,14 +98,13 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
-  // Registration no longer starts a session by itself - the backend creates
-  // an unverified account and emails an OTP, and only verifyEmailOtp (below)
-  // actually logs the user in. This is what keeps a new user off the
-  // authenticated dashboard until they've proven they received the code.
+  // Registration creates the account and starts the session immediately -
+  // no email/phone OTP gate (see backend auth.service.js register()).
   const register = async (payload) => {
     const data = await authApi.register(payload);
-    toast.success("Check your email for a verification code");
-    return data; // { email, message, devOtp? }
+    persistSession(data);
+    toast.success(`Welcome to KrishiBond, ${data.user.name.split(" ")[0]}`);
+    return data.user;
   };
 
   const verifyEmailOtp = async ({ email, otp }) => {

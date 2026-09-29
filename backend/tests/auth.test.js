@@ -23,26 +23,23 @@ const VALID_USER = {
   phone: '9876543210',
 };
 
-// Registers + completes OTP verification, returning a ready-to-use access
-// token - the equivalent of the old "register returns an accessToken"
-// helper, now that registration itself only creates an unverified account.
+// Registers a user and returns the response, which now includes a ready-to-
+// use access token - registration no longer gates on email/phone OTP
+// verification, it starts a session immediately (like login).
 async function registerAndVerify(overrides = {}) {
   const payload = { ...VALID_USER, ...overrides };
   const registerRes = await request(app).post('/api/auth/register').send(payload);
-  const verifyRes = await request(app)
-    .post('/api/auth/verify-email-otp')
-    .send({ email: payload.email, otp: registerRes.body.devOtp });
-  return { registerRes, verifyRes };
+  return { registerRes, verifyRes: registerRes };
 }
 
 describe('POST /api/auth/register', () => {
-  it('creates an unverified account and emails an OTP, without starting a session', async () => {
+  it('creates the account and starts a session immediately, with no OTP step', async () => {
     const res = await request(app).post('/api/auth/register').send(VALID_USER);
 
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
-    expect(res.body.email).toBe(VALID_USER.email);
-    expect(res.body).not.toHaveProperty('accessToken');
+    expect(res.body.accessToken).toEqual(expect.any(String));
+    expect(res.body.user.email).toBe(VALID_USER.email);
 
     const stored = await User.findOne({ email: VALID_USER.email });
     expect(stored.emailVerified).toBe(false);
@@ -90,17 +87,26 @@ describe('POST /api/auth/register', () => {
   });
 });
 
-describe('POST /api/auth/verify-email-otp', () => {
-  it('verifies the correct OTP and issues a session', async () => {
-    const { verifyRes } = await registerAndVerify();
+// Email OTP verification is no longer part of registration - it's now an
+// optional, post-registration action (surfaced in Profile) that a user can
+// take any time to mark their email as verified. resendEmailOtp is the entry
+// point that issues the first OTP, since register() no longer generates one.
+describe('POST /api/auth/verify-email-otp (optional, post-registration)', () => {
+  it('verifies the correct OTP', async () => {
+    await request(app).post('/api/auth/register').send(VALID_USER);
+    const resendRes = await request(app).post('/api/auth/resend-email-otp').send({ email: VALID_USER.email });
 
-    expect(verifyRes.status).toBe(200);
-    expect(verifyRes.body.accessToken).toEqual(expect.any(String));
-    expect(verifyRes.body.user.emailVerified).toBe(true);
+    const res = await request(app)
+      .post('/api/auth/verify-email-otp')
+      .send({ email: VALID_USER.email, otp: resendRes.body.devOtp });
+
+    expect(res.status).toBe(200);
+    expect(res.body.user.emailVerified).toBe(true);
   });
 
   it('rejects an incorrect OTP', async () => {
     await request(app).post('/api/auth/register').send(VALID_USER);
+    await request(app).post('/api/auth/resend-email-otp').send({ email: VALID_USER.email });
     const res = await request(app)
       .post('/api/auth/verify-email-otp')
       .send({ email: VALID_USER.email, otp: '000000' });
@@ -110,6 +116,7 @@ describe('POST /api/auth/verify-email-otp', () => {
 
   it('locks out after too many incorrect attempts', async () => {
     await request(app).post('/api/auth/register').send(VALID_USER);
+    await request(app).post('/api/auth/resend-email-otp').send({ email: VALID_USER.email });
     for (let i = 0; i < 5; i += 1) {
       await request(app).post('/api/auth/verify-email-otp').send({ email: VALID_USER.email, otp: '000000' });
     }
@@ -118,10 +125,15 @@ describe('POST /api/auth/verify-email-otp', () => {
   });
 
   it('rejects verifying an already-verified email', async () => {
-    const { registerRes } = await registerAndVerify();
+    await request(app).post('/api/auth/register').send(VALID_USER);
+    const resendRes = await request(app).post('/api/auth/resend-email-otp').send({ email: VALID_USER.email });
+    await request(app)
+      .post('/api/auth/verify-email-otp')
+      .send({ email: VALID_USER.email, otp: resendRes.body.devOtp });
+
     const res = await request(app)
       .post('/api/auth/verify-email-otp')
-      .send({ email: VALID_USER.email, otp: registerRes.body.devOtp });
+      .send({ email: VALID_USER.email, otp: resendRes.body.devOtp });
 
     expect(res.status).toBe(400);
   });
@@ -129,8 +141,9 @@ describe('POST /api/auth/verify-email-otp', () => {
 
 describe('POST /api/auth/resend-email-otp', () => {
   it('invalidates the previous OTP and issues a new one', async () => {
-    const registerRes = await request(app).post('/api/auth/register').send(VALID_USER);
-    const oldOtp = registerRes.body.devOtp;
+    await request(app).post('/api/auth/register').send(VALID_USER);
+    const firstRes = await request(app).post('/api/auth/resend-email-otp').send({ email: VALID_USER.email });
+    const oldOtp = firstRes.body.devOtp;
 
     const resendRes = await request(app).post('/api/auth/resend-email-otp').send({ email: VALID_USER.email });
     const newOtp = resendRes.body.devOtp;

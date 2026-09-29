@@ -30,50 +30,25 @@ function assignEmailOtp(user) {
 }
 
 async function register({ name, email, password, role, phone, location }) {
-  // Registration used to be 3 sequential round trips to MongoDB: a findOne()
-  // pre-check for the duplicate email, a create(), and a second save() to
-  // attach the verification token + refresh-token session. The email
-  // uniqueness check is redundant with the schema's unique index - it only
-  // needs to run (and cost a round trip) on the rare duplicate path, not on
-  // every registration - and the OTP can be generated up front and included
-  // directly in the create() call, keeping this back down to one write.
-  //
-  // Registration is also no longer where a session begins: the account is
-  // created in an unverified state and no JWTs are issued here at all - only
-  // verifyEmailOtp() (after the user proves they received the OTP) does
-  // that, which is what keeps a user off the authenticated dashboard until
-  // the required verification is actually complete.
-  const otp = generateOtp();
-
+  // Registration is a single round trip: create the account, then issue a
+  // session immediately - the same shape as login(). There is no email/phone
+  // OTP gate here; email/phone are still validated for format (see
+  // authValidators/commonSchemas) but proving inbox/SMS access is no longer
+  // a precondition for reaching the dashboard. A user can still optionally
+  // verify their email later from their profile (see verifyEmailOtp/
+  // resendEmailOtp below), which is a separate, non-blocking feature.
   let user;
   try {
-    user = await User.create({
-      name,
-      email,
-      password,
-      role,
-      phone,
-      location,
-      emailVerificationOtpHash: hashToken(otp),
-      emailVerificationOtpExpires: new Date(Date.now() + otpConfig.expiresInMinutes * 60 * 1000),
-    });
+    user = await User.create({ name, email, password, role, phone, location });
   } catch (err) {
     if (err.code === 11000) throw new ApiError(409, 'Email already registered');
     throw err;
   }
 
-  // Fire-and-forget: the account is already created at this point, so a slow
-  // or unreachable SMTP provider must never delay or fail the registration
-  // response - the OTP screen's "resend" option covers the case where the
-  // email genuinely never arrives.
-  emailService.sendOtpEmail(user, otp).catch((err) => {
-    logger.error(`Failed to send registration OTP to ${user.email}: ${err.message}`);
-  });
+  const { accessToken, refreshToken } = issueTokenPair(user);
+  await user.save();
 
-  // Same dev-only bypass already used by sendOtp/forgotPassword: never
-  // present in production (see config/env.js), but lets the registration ->
-  // verify flow be tested end-to-end without a real mailbox in dev/CI.
-  return { user, devOtp: nodeEnv === 'production' ? undefined : otp };
+  return { user, accessToken, refreshToken };
 }
 
 async function login({ email, password }) {

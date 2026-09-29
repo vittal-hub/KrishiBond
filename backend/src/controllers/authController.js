@@ -6,15 +6,11 @@ const { setRefreshCookie, clearRefreshCookie } = require('../services/token.serv
 const { cookie: cookieConfig } = require('../config/env');
 
 const register = asyncHandler(async (req, res) => {
-  // No session is issued here - the account exists but is unverified until
-  // verifyEmailOtp succeeds, so there is nothing to log the caller into yet.
-  const { user, devOtp } = await authService.register(req.body);
-  res.status(201).json({
-    success: true,
-    message: 'Account created. Enter the code we emailed you to finish signing in.',
-    email: user.email,
-    devOtp,
-  });
+  // Session starts immediately on successful registration - no email/phone
+  // verification gate (see auth.service.js register()).
+  const { user, accessToken, refreshToken } = await authService.register(req.body);
+  setRefreshCookie(res, refreshToken);
+  res.status(201).json({ success: true, user: toUserDTO(user), accessToken });
 });
 
 const login = asyncHandler(async (req, res) => {

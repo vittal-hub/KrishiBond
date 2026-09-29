@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
-import { Sprout, Wheat, Building2, Eye, EyeOff, MailCheck } from "lucide-react";
+import { Sprout, Wheat, Building2, Eye, EyeOff } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext.jsx";
 import { getErrorMessage } from "../utils/errorMessage";
@@ -17,84 +17,10 @@ const PHONE_PATTERN = /^[6-9]\d{9}$/;
 // nameSchema for the same reasoning.
 const NAME_PATTERN = /[A-Za-z]/;
 
-function OtpStep({ email, onBack }) {
-  const { verifyEmailOtp, resendEmailOtp } = useAuth();
-  const navigate = useNavigate();
-  const [resending, setResending] = useState(false);
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm();
-
-  const onSubmit = async ({ otp }) => {
-    try {
-      await verifyEmailOtp({ email, otp });
-      navigate("/dashboard", { replace: true });
-    } catch (error) {
-      toast.error(getErrorMessage(error, "Incorrect or expired code"));
-    }
-  };
-
-  const onResend = async () => {
-    setResending(true);
-    try {
-      const data = await resendEmailOtp(email);
-      if (data.devOtp) toast.success(`Dev mode - OTP: ${data.devOtp}`, { duration: 8000 });
-      else toast.success("A new code has been sent");
-    } catch (error) {
-      toast.error(getErrorMessage(error, "Could not resend the code"));
-    } finally {
-      setResending(false);
-    }
-  };
-
-  return (
-    <div className="stub-card p-8 text-center">
-      <MailCheck className="w-10 h-10 text-canopy-600 mx-auto" />
-      <h1 className="font-display text-2xl font-semibold mt-3">Check your email</h1>
-      <p className="text-sm text-ink-faint mt-1">
-        We sent a 6-digit code to <span className="font-medium text-ink">{email}</span>
-      </p>
-
-      <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4 text-left">
-        <div>
-          <label className="label" htmlFor="otp">Verification code</label>
-          <input
-            id="otp"
-            className="input-field text-center tracking-[0.5em] font-mono text-lg"
-            placeholder="000000"
-            maxLength={6}
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            {...register("otp", {
-              required: "Enter the code we emailed you",
-              pattern: { value: /^\d{6}$/, message: "Enter the 6-digit code" },
-            })}
-          />
-          {errors.otp && <p className="text-xs text-clay-500 mt-1">{errors.otp.message}</p>}
-        </div>
-        <button type="submit" disabled={isSubmitting} className="btn-primary w-full">
-          {isSubmitting ? "Verifying…" : "Verify & continue"}
-        </button>
-      </form>
-
-      <div className="flex items-center justify-between mt-5 text-sm">
-        <button type="button" onClick={onBack} className="text-ink-faint hover:underline">
-          Back
-        </button>
-        <button type="button" onClick={onResend} disabled={resending} className="text-canopy-700 font-medium hover:underline">
-          {resending ? "Sending…" : "Resend code"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export default function Register() {
   const { register: registerUser } = useAuth();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [pendingEmail, setPendingEmail] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const {
@@ -120,9 +46,8 @@ export default function Register() {
   const onSubmit = async (values) => {
     try {
       const { district, state, confirmPassword, ...rest } = values;
-      const data = await registerUser({ ...rest, location: { district, state } });
-      if (data.devOtp) toast.success(`Dev mode - OTP: ${data.devOtp}`, { duration: 8000 });
-      setPendingEmail(data.email);
+      await registerUser({ ...rest, location: { district, state } });
+      navigate("/dashboard", { replace: true });
     } catch (error) {
       toast.error(getErrorMessage(error, "Could not create your account"));
     }
@@ -138,10 +63,7 @@ export default function Register() {
           <span className="font-display text-xl font-semibold">KrishiBond</span>
         </div>
 
-        {pendingEmail ? (
-          <OtpStep email={pendingEmail} onBack={() => setPendingEmail(null)} />
-        ) : (
-          <div className="stub-card p-8">
+        <div className="stub-card p-8">
             <h1 className="font-display text-2xl font-semibold text-center">
               Create your account
             </h1>
@@ -329,7 +251,6 @@ export default function Register() {
               </button>
             </form>
           </div>
-        )}
 
         <p className="text-center text-sm text-ink-faint mt-6">
           Already have an account?{" "}
