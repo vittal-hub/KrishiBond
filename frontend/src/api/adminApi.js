@@ -8,7 +8,8 @@ export const adminApi = {
   reactivateUser: (id) => api.patch(`/admin/users/${id}/reactivate`).then((r) => r.data),
 
   listTickets: (params) => api.get('/admin/tickets', { params }).then((r) => r.data),
-  updateTicket: (id, status) => api.patch(`/admin/tickets/${id}`, { status }).then((r) => r.data),
+  updateTicket: (id, { status, response }) =>
+    api.patch(`/admin/tickets/${id}`, { status, response }).then((r) => r.data),
 
   listAuditLogs: (params) => api.get('/admin/audit-logs', { params }).then((r) => r.data),
 

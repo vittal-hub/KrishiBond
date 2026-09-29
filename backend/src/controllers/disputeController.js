@@ -27,11 +27,20 @@ const createDispute = asyncHandler(async (req, res) => {
   if (!contract) throw new ApiError(404, 'Contract not found');
   assertParty(contract, req.user._id);
 
+  // Only a contract that's actually in force can be disputed - a 'pending'
+  // contract has no obligations yet, and 'fulfilled'/'cancelled'/'disputed'
+  // are already terminal or already under dispute. Without this guard a
+  // dispute could silently knock a completed contract back into 'disputed'.
+  if (contract.status !== 'active') {
+    throw new ApiError(400, `Cannot raise a dispute on a contract that is ${contract.status}`);
+  }
+
   const dispute = await Dispute.create({
     contract: contract._id,
     raisedBy: req.user._id,
     reason,
     evidenceUrls: evidenceUrls || [],
+    previousContractStatus: contract.status,
   });
   await dispute.populate('raisedBy', 'name');
 
@@ -131,9 +140,14 @@ const resolveDispute = asyncHandler(async (req, res) => {
     after: { status, resolutionNote },
   });
 
+  // 'resolved' and 'rejected' are terminal outcomes - either way the dispute
+  // is over and the contract should return to whatever state it was in
+  // before the dispute was raised, rather than being left stuck as
+  // 'disputed' forever (previously only 'resolved' restored the contract,
+  // and always to a hardcoded 'active').
   const contract = await Contract.findById(dispute.contract);
-  if (contract && status === 'resolved') {
-    contract.status = 'active';
+  if (contract && contract.status === 'disputed' && ['resolved', 'rejected'].includes(status)) {
+    contract.status = dispute.previousContractStatus || 'active';
     await contract.save();
   }
 

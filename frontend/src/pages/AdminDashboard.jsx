@@ -553,7 +553,67 @@ function FaqTab() {
   );
 }
 
-const TICKET_STATUSES = ['open', 'in_progress', 'closed'];
+const TICKET_STATUSES = ['open', 'in_progress', 'resolved', 'closed'];
+
+function TicketRow({ ticket: t, onUpdated }) {
+  const [status, setStatus] = useState(t.status);
+  const [reply, setReply] = useState(t.response || '');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const { ticket } = await adminApi.updateTicket(t._id, {
+        status,
+        response: reply.trim() || undefined,
+      });
+      onUpdated(ticket);
+      toast.success('Ticket updated');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Could not update this ticket'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium">{t.subject}</p>
+          <p className="text-xs text-ink-faint mt-0.5">{t.user?.name} ({t.user?.email}) · {formatRelative(t.createdAt)}</p>
+          <p className="text-sm text-ink-soft mt-1">{t.message}</p>
+        </div>
+        <select
+          className="input-field max-w-[140px] text-xs"
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+        >
+          {TICKET_STATUSES.map((s) => (
+            <option key={s} value={s}>{s.replace('_', ' ')}</option>
+          ))}
+        </select>
+      </div>
+      <div className="flex items-end gap-2">
+        <textarea
+          className="input-field text-sm flex-1"
+          rows={2}
+          placeholder="Reply to this ticket…"
+          value={reply}
+          onChange={(e) => setReply(e.target.value)}
+        />
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="btn-primary text-xs px-3 py-2 whitespace-nowrap"
+        >
+          {saving ? 'Saving…' : 'Save & notify'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function TicketsTab() {
   const [tickets, setTickets] = useState([]);
@@ -570,13 +630,8 @@ function TicketsTab() {
 
   useEffect(load, []);
 
-  const updateStatus = async (id, status) => {
-    try {
-      await adminApi.updateTicket(id, status);
-      load();
-    } catch (error) {
-      toast.error(getErrorMessage(error, 'Could not update this ticket'));
-    }
+  const handleUpdated = (updated) => {
+    setTickets((prev) => prev.map((t) => (t._id === updated._id ? updated : t)));
   };
 
   if (loading) return <Loader label="Loading tickets" />;
@@ -585,22 +640,7 @@ function TicketsTab() {
     <div className="stub-card divide-y divide-ink/5">
       {tickets.length === 0 && <p className="text-sm text-ink-faint p-6 text-center">No support tickets.</p>}
       {tickets.map((t) => (
-        <div key={t._id} className="flex items-center justify-between gap-3 p-4">
-          <div>
-            <p className="text-sm font-medium">{t.subject}</p>
-            <p className="text-xs text-ink-faint mt-0.5">{t.user?.name} ({t.user?.email}) · {formatRelative(t.createdAt)}</p>
-            <p className="text-sm text-ink-soft mt-1">{t.message}</p>
-          </div>
-          <select
-            className="input-field max-w-[140px] text-xs"
-            value={t.status}
-            onChange={(e) => updateStatus(t._id, e.target.value)}
-          >
-            {TICKET_STATUSES.map((s) => (
-              <option key={s} value={s}>{s.replace('_', ' ')}</option>
-            ))}
-          </select>
-        </div>
+        <TicketRow key={t._id} ticket={t} onUpdated={handleUpdated} />
       ))}
     </div>
   );

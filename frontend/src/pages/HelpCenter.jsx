@@ -16,6 +16,7 @@ const FALLBACK_FAQS = [
 const TICKET_STATUS_STYLE = {
   open: 'bg-harvest-50 text-harvest-700 border-harvest-400/30',
   in_progress: 'bg-irrigation-50 text-irrigation-700 border-irrigation-400/30',
+  resolved: 'bg-canopy-50 text-canopy-700 border-canopy-400/30',
   closed: 'bg-ink/5 text-ink-faint border-ink/10',
 };
 
@@ -88,14 +89,22 @@ export default function HelpCenter() {
           ) : (
             <div className="mt-4 space-y-2">
               {tickets.map((t) => (
-                <div key={t._id} className="flex items-center justify-between p-3 rounded-stub border border-ink/10">
-                  <div>
-                    <p className="text-sm font-medium">{t.subject}</p>
-                    <p className="text-xs text-ink-faint mt-0.5">{formatRelative(t.createdAt)}</p>
+                <div key={t._id} className="p-3 rounded-stub border border-ink/10">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">{t.subject}</p>
+                      <p className="text-xs text-ink-faint mt-0.5">{formatRelative(t.createdAt)}</p>
+                    </div>
+                    <span className={`text-xs font-semibold capitalize px-2.5 py-1 rounded-full border ${TICKET_STATUS_STYLE[t.status] || TICKET_STATUS_STYLE.open}`}>
+                      {t.status.replace('_', ' ')}
+                    </span>
                   </div>
-                  <span className={`text-xs font-semibold capitalize px-2.5 py-1 rounded-full border ${TICKET_STATUS_STYLE[t.status] || TICKET_STATUS_STYLE.open}`}>
-                    {t.status.replace('_', ' ')}
-                  </span>
+                  {t.response && (
+                    <div className="mt-2 text-sm bg-canopy-50/60 border border-canopy-400/20 rounded-stub p-2.5">
+                      <p className="text-xs font-semibold text-canopy-700 mb-1">Support reply</p>
+                      <p className="text-ink-soft">{t.response}</p>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

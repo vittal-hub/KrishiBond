@@ -1,91 +1,63 @@
 import React from 'react';
-import { Document, Page, Text, View, StyleSheet, pdf } from '@react-pdf/renderer';
+import { Document, Page, Text, View, pdf } from '@react-pdf/renderer';
 import { formatCurrency, formatDate } from '../utils/format';
+import { PdfHeader, PdfFooter, Section, FieldRow, styles } from './PdfBrand.jsx';
 
-const styles = StyleSheet.create({
-  page: { padding: 36, fontSize: 11, fontFamily: 'Helvetica', color: '#1C2B22' },
-  badge: { fontSize: 9, color: '#2F5233', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 },
-  title: { fontSize: 18, fontWeight: 700, marginBottom: 4 },
-  subtitle: { fontSize: 10, color: '#7C8577', marginBottom: 18 },
-  section: { marginBottom: 14 },
-  sectionTitle: { fontSize: 12, fontWeight: 700, marginBottom: 6, borderBottom: '1px solid #E2E8E5', paddingBottom: 3 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  label: { color: '#7C8577' },
-  value: { fontWeight: 700 },
-  amount: { fontSize: 22, fontWeight: 700, marginTop: 6, color: '#2F5233' },
-  disclaimer: { marginTop: 24, fontSize: 8, color: '#7C8577', borderTop: '1px solid #E2E8E5', paddingTop: 8 },
-});
-
-function ReceiptPdfDocument({ payment, merchant }) {
+function ReceiptPdfDocument({ payment, merchant, payerName }) {
   return (
-    <Document>
+    <Document title={`KrishiBond Receipt ${payment.receiptNumber || ''}`}>
       <Page size="A4" style={styles.page}>
+        <PdfHeader docLabel="Payment Receipt" />
+
         <Text style={styles.badge}>Demo Payment Gateway · Simulated Transaction</Text>
-        <Text style={styles.title}>KrishiBond Payment Receipt</Text>
-        <Text style={styles.subtitle}>Receipt #{payment.receiptNumber} · {formatDate(payment.paidAt, 'dd MMM yyyy, HH:mm')}</Text>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Contract</Text>
-          <View style={styles.row}>
-            <Text style={styles.label}>Contract ID</Text>
-            <Text style={styles.value}>#{merchant?.contractId?.toString?.().slice(-6)}</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.label}>Crop</Text>
-            <Text style={styles.value}>{merchant?.cropType}</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.label}>Farmer</Text>
-            <Text style={styles.value}>{merchant?.farmerName}</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.label}>Buyer</Text>
-            <Text style={styles.value}>{merchant?.buyerName}</Text>
-          </View>
+        <View style={styles.titleBlock}>
+          <Text style={styles.title}>Payment Receipt</Text>
+          <Text style={styles.subtitle}>
+            Receipt #{payment.receiptNumber} · {formatDate(payment.paidAt, 'dd MMM yyyy, HH:mm')}
+          </Text>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Payment</Text>
-          <View style={styles.row}>
-            <Text style={styles.label}>Transaction ID</Text>
-            <Text style={styles.value}>{payment.transactionId}</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.label}>Order ID</Text>
-            <Text style={styles.value}>{payment.orderId}</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.label}>Method</Text>
-            <Text style={styles.value}>{(payment.method || '').replace('_', ' ').toUpperCase()}</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.label}>Status</Text>
-            <Text style={styles.value}>{payment.status === 'held' ? 'Paid (held in escrow)' : payment.status}</Text>
-          </View>
-        </View>
+        <Section title="Contract">
+          <FieldRow label="Contract ID" value={`#${merchant?.contractId?.toString?.().slice(-6)}`} />
+          <FieldRow label="Crop" value={merchant?.cropType} />
+          <FieldRow label="Farmer" value={merchant?.farmerName} />
+          <FieldRow label="Buyer" value={merchant?.buyerName} />
+        </Section>
 
-        <View style={styles.section}>
-          <Text style={styles.label}>Amount paid</Text>
-          <Text style={styles.amount}>{formatCurrency(payment.totalAmount)}</Text>
-          {payment.convenienceFee > 0 && (
-            <Text style={{ fontSize: 9, color: '#7C8577', marginTop: 2 }}>
-              Includes {formatCurrency(payment.convenienceFee)} convenience fee
-            </Text>
-          )}
-        </View>
+        <Section title="Payment">
+          {payerName && <FieldRow label="Paid by" value={payerName} />}
+          <FieldRow label="Transaction ID" value={payment.transactionId} />
+          <FieldRow label="Order ID" value={payment.orderId} />
+          <FieldRow label="Method" value={(payment.method || '').replace('_', ' ').toUpperCase()} />
+          <FieldRow label="Status" value={payment.status === 'held' ? 'Paid (held in escrow)' : payment.status} />
+        </Section>
+
+        <Section title="Amount Paid">
+          <View style={styles.amountBox}>
+            <Text style={styles.amountLabel}>Total paid</Text>
+            <Text style={styles.amountValue}>{formatCurrency(payment.totalAmount)}</Text>
+            {payment.convenienceFee > 0 && (
+              <Text style={styles.amountNote}>
+                Includes {formatCurrency(payment.convenienceFee)} convenience fee
+              </Text>
+            )}
+          </View>
+        </Section>
 
         <Text style={styles.disclaimer}>
           This is a demo receipt generated by KrishiBond's simulated payment gateway for
           demonstration purposes only. No real financial transaction was processed and this
           document has no monetary value.
         </Text>
+
+        <PdfFooter />
       </Page>
     </Document>
   );
 }
 
-export async function downloadReceiptPdf({ payment, merchant }) {
-  const blob = await pdf(<ReceiptPdfDocument payment={payment} merchant={merchant} />).toBlob();
+export async function downloadReceiptPdf({ payment, merchant, payerName }) {
+  const blob = await pdf(<ReceiptPdfDocument payment={payment} merchant={merchant} payerName={payerName} />).toBlob();
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

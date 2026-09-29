@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { locationSchema } = require('./locationSchema');
 
 const createListingSchema = z.object({
   body: z.object({
@@ -12,7 +13,7 @@ const createListingSchema = z.object({
     organic: z.boolean().optional(),
     storageFacility: z.boolean().optional(),
     deliveryAvailable: z.boolean().optional(),
-    location: z.object({ state: z.string().optional(), district: z.string().optional() }).optional(),
+    location: locationSchema,
     description: z.string().optional(),
     availableFrom: z.string().optional(),
   }),

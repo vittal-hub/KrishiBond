@@ -8,6 +8,7 @@ import { kycApi } from '../api/kycApi';
 import { notificationApi } from '../api/communicationApi';
 import { useAuth } from '../context/AuthContext.jsx';
 import { getErrorMessage } from '../utils/errorMessage';
+import LocationFields from '../components/LocationFields.jsx';
 
 const NOTIFICATION_CATEGORIES = [
   { key: 'contract', label: 'Contract updates', hint: 'Proposals, signatures, status changes' },
@@ -31,7 +32,7 @@ function VerificationBadge({ verified, label }) {
 }
 
 function ProfileForm({ user, updateUser }) {
-  const { register, handleSubmit, formState: { errors, isSubmitting, isDirty } } = useForm({
+  const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting, isDirty } } = useForm({
     defaultValues: {
       name: user?.name ?? '',
       phone: user?.phone ?? '',
@@ -63,18 +64,7 @@ function ProfileForm({ user, updateUser }) {
         <input id="phone" className="input-field" {...register('phone', { required: 'Phone is required' })} />
         {errors.phone && <p className="text-xs text-clay-500 mt-1">{errors.phone.message}</p>}
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="label" htmlFor="district">District</label>
-          <input id="district" className="input-field" {...register('district', { required: 'District is required' })} />
-          {errors.district && <p className="text-xs text-clay-500 mt-1">{errors.district.message}</p>}
-        </div>
-        <div>
-          <label className="label" htmlFor="state">State</label>
-          <input id="state" className="input-field" {...register('state', { required: 'State is required' })} />
-          {errors.state && <p className="text-xs text-clay-500 mt-1">{errors.state.message}</p>}
-        </div>
-      </div>
+      <LocationFields register={register} watch={watch} setValue={setValue} errors={errors} />
       <div>
         <label className="label" htmlFor="bio">About</label>
         <textarea id="bio" rows={3} className="input-field resize-none" placeholder="A short introduction for the people you contract with" {...register('bio')} />

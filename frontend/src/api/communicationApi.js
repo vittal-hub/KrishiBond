@@ -3,11 +3,16 @@ import api from './axios';
 export const messageApi = {
   threads: () => api.get('/messages/threads').then((r) => r.data),
   thread: (threadId, params) => api.get(`/messages/threads/${threadId}`, { params }).then((r) => r.data),
-  send: (threadId, payload) => api.post(`/messages/threads/${threadId}`, payload).then((r) => r.data),
+  // clientId lets the backend recognize a resend of the exact same compose
+  // action (e.g. a manual retry after a slow/timed-out request) and return
+  // the message that was already created instead of inserting a duplicate.
+  send: (threadId, payload, clientId) =>
+    api.post(`/messages/threads/${threadId}`, { ...payload, clientId }).then((r) => r.data),
   startThread: (payload) => api.post('/messages/threads', payload).then((r) => r.data),
-  uploadAttachment: (threadId, file) => {
+  uploadAttachment: (threadId, file, clientId) => {
     const formData = new FormData();
     formData.append('file', file);
+    if (clientId) formData.append('clientId', clientId);
     return api
       .post(`/messages/threads/${threadId}/attachments`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },

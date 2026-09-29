@@ -6,6 +6,7 @@ import { marketplaceApi } from '../api/marketplaceApi';
 import { categoryApi } from '../api/categoryApi';
 import { getErrorMessage } from '../utils/errorMessage';
 import Loader from '../components/Loader.jsx';
+import LocationFields from '../components/LocationFields.jsx';
 
 const UNITS = ['kg', 'quintal', 'ton'];
 
@@ -21,6 +22,8 @@ export default function ListingForm() {
     register,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm({ defaultValues: { unit: 'quintal' } });
 
@@ -170,18 +173,7 @@ export default function ListingForm() {
           <input id="harvestDate" type="date" className="input-field" {...register('harvestDate')} />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label" htmlFor="district">District</label>
-            <input id="district" className="input-field" {...register('district', { required: 'District is required' })} />
-            {errors.district && <p className="text-xs text-clay-500 mt-1">{errors.district.message}</p>}
-          </div>
-          <div>
-            <label className="label" htmlFor="state">State</label>
-            <input id="state" className="input-field" {...register('state', { required: 'State is required' })} />
-            {errors.state && <p className="text-xs text-clay-500 mt-1">{errors.state.message}</p>}
-          </div>
-        </div>
+        <LocationFields register={register} watch={watch} setValue={setValue} errors={errors} />
 
         <div className="flex flex-wrap gap-5">
           <label className="flex items-center gap-2 text-sm text-ink-soft">

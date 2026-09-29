@@ -1,6 +1,7 @@
 const { registerSchema, loginSchema } = require('../src/validators/authValidators');
 const { createContractSchema, escrowFundSchema } = require('../src/validators/contractValidators');
 const { createCategorySchema } = require('../src/validators/categoryValidators');
+const { locationSchema } = require('../src/validators/locationSchema');
 
 describe('authValidators', () => {
   it('accepts a well-formed registration payload', () => {
@@ -22,6 +23,29 @@ describe('authValidators', () => {
   it('rejects an empty login password', () => {
     const result = loginSchema.safeParse({ body: { email: 'a@b.com', password: '' } });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('locationSchema', () => {
+  it('accepts no location at all', () => {
+    expect(locationSchema.safeParse(undefined).success).toBe(true);
+  });
+
+  it('accepts a real state/district combination', () => {
+    expect(locationSchema.safeParse({ state: 'Tamil Nadu', district: 'Chennai' }).success).toBe(true);
+  });
+
+  it('rejects an unrecognized state', () => {
+    expect(locationSchema.safeParse({ state: 'Narnia', district: 'Chennai' }).success).toBe(false);
+  });
+
+  it('rejects a district that belongs to a different state', () => {
+    const result = locationSchema.safeParse({ state: 'Tamil Nadu', district: 'Mumbai' });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a state with no district yet (partial update)', () => {
+    expect(locationSchema.safeParse({ state: 'Kerala' }).success).toBe(true);
   });
 });
 

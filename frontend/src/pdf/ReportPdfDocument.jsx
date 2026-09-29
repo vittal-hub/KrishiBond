@@ -1,58 +1,43 @@
 import React from 'react';
-import { Document, Page, Text, View, StyleSheet, pdf } from '@react-pdf/renderer';
-import { formatDate } from '../utils/format';
+import { Document, Page, Text, View, pdf } from '@react-pdf/renderer';
+import { PdfHeader, PdfFooter, Table, styles, COLORS } from './PdfBrand.jsx';
 
-const styles = StyleSheet.create({
-  page: { padding: 36, fontSize: 9, fontFamily: 'Helvetica', color: '#1C2B22' },
-  title: { fontSize: 18, fontWeight: 700, marginBottom: 4 },
-  subtitle: { fontSize: 10, color: '#7C8577', marginBottom: 18 },
-  kpiRow: { flexDirection: 'row', marginBottom: 18, gap: 16 },
-  kpiBox: { flexGrow: 1, borderLeft: '2px solid #2F5233', paddingLeft: 8 },
-  kpiLabel: { fontSize: 8, color: '#7C8577' },
-  kpiValue: { fontSize: 14, fontWeight: 700, marginTop: 2 },
-  table: { width: '100%' },
-  tableHeaderRow: { flexDirection: 'row', borderBottom: '1px solid #1C2B22', paddingBottom: 4, marginBottom: 4 },
-  tableRow: { flexDirection: 'row', borderBottom: '1px solid #E2E8E5', paddingVertical: 3 },
-  cellHeader: { fontWeight: 700, fontSize: 8 },
-  cell: { fontSize: 8 },
-});
+const kpiStyles = {
+  row: { flexDirection: 'row', marginBottom: 18, gap: 16, flexWrap: 'wrap' },
+  box: { flexGrow: 1, minWidth: 100, borderLeft: `2px solid ${COLORS.canopy600}`, paddingLeft: 8 },
+  label: { fontSize: 8, color: COLORS.inkFaint, textTransform: 'uppercase', letterSpacing: 0.4 },
+  value: { fontSize: 14, fontFamily: 'Helvetica-Bold', marginTop: 2 },
+};
 
 function ReportPdfDocument({ title, kpis = [], columns, rows }) {
   return (
-    <Document>
+    <Document title={`KrishiBond Report - ${title || ''}`}>
       <Page size="A4" style={styles.page}>
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.subtitle}>KrishiBond · Generated {formatDate(new Date())}</Text>
+        <PdfHeader docLabel="Report" />
+
+        <View style={styles.titleBlock}>
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.subtitle}>{rows.length} record{rows.length === 1 ? '' : 's'}</Text>
+        </View>
 
         {kpis.length > 0 && (
-          <View style={styles.kpiRow}>
+          <View style={kpiStyles.row} wrap={false}>
             {kpis.map((k) => (
-              <View key={k.label} style={styles.kpiBox}>
-                <Text style={styles.kpiLabel}>{k.label}</Text>
-                <Text style={styles.kpiValue}>{k.value}</Text>
+              <View key={k.label} style={kpiStyles.box}>
+                <Text style={kpiStyles.label}>{k.label}</Text>
+                <Text style={kpiStyles.value}>{k.value}</Text>
               </View>
             ))}
           </View>
         )}
 
-        <View style={styles.table}>
-          <View style={styles.tableHeaderRow}>
-            {columns.map((c) => (
-              <Text key={c.key} style={[styles.cellHeader, { width: `${100 / columns.length}%` }]}>
-                {c.header}
-              </Text>
-            ))}
-          </View>
-          {rows.map((row, idx) => (
-            <View key={idx} style={styles.tableRow}>
-              {columns.map((c) => (
-                <Text key={c.key} style={[styles.cell, { width: `${100 / columns.length}%` }]}>
-                  {row[c.key] ?? ''}
-                </Text>
-              ))}
-            </View>
-          ))}
-        </View>
+        {rows.length > 0 ? (
+          <Table columns={columns} rows={rows} />
+        ) : (
+          <Text style={{ color: COLORS.inkFaint, fontSize: 9 }}>No records for this period.</Text>
+        )}
+
+        <PdfFooter />
       </Page>
     </Document>
   );

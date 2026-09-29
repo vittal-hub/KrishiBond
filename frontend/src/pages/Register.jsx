@@ -5,6 +5,7 @@ import { Sprout, Wheat, Building2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext.jsx";
 import { getErrorMessage } from "../utils/errorMessage";
+import LocationFields from "../components/LocationFields.jsx";
 
 export default function Register() {
   const { register: registerUser } = useAuth();
@@ -151,40 +152,7 @@ export default function Register() {
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label" htmlFor="district">
-                  District
-                </label>
-                <input
-                  id="district"
-                  className="input-field"
-                  placeholder="Nashik"
-                  {...register("district", { required: "District is required" })}
-                />
-                {errors.district && (
-                  <p className="text-xs text-clay-500 mt-1">
-                    {errors.district.message}
-                  </p>
-                )}
-              </div>
-              <div>
-                <label className="label" htmlFor="state">
-                  State
-                </label>
-                <input
-                  id="state"
-                  className="input-field"
-                  placeholder="Maharashtra"
-                  {...register("state", { required: "State is required" })}
-                />
-                {errors.state && (
-                  <p className="text-xs text-clay-500 mt-1">
-                    {errors.state.message}
-                  </p>
-                )}
-              </div>
-            </div>
+            <LocationFields register={register} watch={watch} setValue={setValue} errors={errors} />
 
             <div>
               <label className="label" htmlFor="password">

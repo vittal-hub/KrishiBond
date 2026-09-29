@@ -1,13 +1,33 @@
 const { cloudinary, isConfigured } = require('../config/cloudinary');
 const ApiError = require('../utils/ApiError');
 
+// Cloudinary config errors (a bad cloud_name/api_key/api_secret) surface as a
+// plain error from the SDK with no HTTP status the global error handler
+// recognizes, so without this they were falling through to an opaque
+// "Internal server error" 500 - hiding the actual, fixable cause (a wrong
+// env var) from both the response and anyone reading the logs.
+function normalizeCloudinaryError(err) {
+  const message = err?.message || 'Upload failed';
+  if (/invalid cloud_name|invalid api_key|invalid signature/i.test(message)) {
+    return new ApiError(
+      502,
+      `Upload service misconfigured (${message}). Check CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET match your actual Cloudinary account.`
+    );
+  }
+  return new ApiError(502, `Upload failed: ${message}`);
+}
+
 function uploadBufferToCloudinary(buffer, { folder, resourceType = 'image' }) {
   return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream({ folder, resource_type: resourceType }, (err, result) => {
-      if (err) return reject(err);
-      resolve(result);
-    });
-    stream.end(buffer);
+    try {
+      const stream = cloudinary.uploader.upload_stream({ folder, resource_type: resourceType }, (err, result) => {
+        if (err) return reject(normalizeCloudinaryError(err));
+        resolve(result);
+      });
+      stream.end(buffer);
+    } catch (err) {
+      reject(normalizeCloudinaryError(err));
+    }
   });
 }
 

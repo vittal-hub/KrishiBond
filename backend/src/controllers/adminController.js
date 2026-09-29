@@ -169,7 +169,7 @@ const getStats = asyncHandler(async (req, res) => {
   });
 });
 
-const TICKET_STATUSES = ['open', 'in_progress', 'closed'];
+const TICKET_STATUSES = ['open', 'in_progress', 'resolved', 'closed'];
 
 const listTickets = asyncHandler(async (req, res) => {
   const { status } = req.query;
@@ -179,20 +179,35 @@ const listTickets = asyncHandler(async (req, res) => {
 });
 
 const updateTicket = asyncHandler(async (req, res) => {
-  const { status } = req.body;
+  const { status, response } = req.body;
   const ticket = await SupportTicket.findById(req.params.id);
   if (!ticket) throw new ApiError(404, 'Support ticket not found');
 
-  const before = ticket.status;
+  const before = { status: ticket.status, response: ticket.response };
+
   ticket.status = status;
+  if (response) ticket.response = response;
+  if (['resolved', 'closed'].includes(status)) {
+    ticket.resolvedBy = req.user._id;
+    ticket.resolvedAt = new Date();
+  }
   await ticket.save();
 
   await recordAudit(req, {
     action: 'TICKET_STATUS_UPDATE',
     entityType: 'SupportTicket',
     entityId: ticket._id,
-    before: { status: before },
-    after: { status },
+    before,
+    after: { status: ticket.status, response: ticket.response },
+  });
+
+  await notifyUser(req.app.get('io'), ticket.user, {
+    type: 'support_ticket_update',
+    category: 'system',
+    message: response
+      ? `Support replied to "${ticket.subject}": ${response}`
+      : `Your support ticket "${ticket.subject}" is now ${status.replace('_', ' ')}`,
+    link: '/help',
   });
 
   res.json({ success: true, ticket });

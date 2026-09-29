@@ -8,7 +8,8 @@ const suspendUserSchema = z.object({
 
 const updateTicketSchema = z.object({
   body: z.object({
-    status: z.enum(['open', 'in_progress', 'closed']),
+    status: z.enum(['open', 'in_progress', 'resolved', 'closed']),
+    response: z.string().trim().min(1).max(2000).optional(),
   }),
 });
 

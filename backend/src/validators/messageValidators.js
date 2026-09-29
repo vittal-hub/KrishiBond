@@ -11,6 +11,7 @@ const createThreadSchema = z.object({
 const sendMessageSchema = z.object({
   body: z.object({
     body: z.string().min(1),
+    clientId: z.string().min(1).max(100).optional(),
   }),
 });
 

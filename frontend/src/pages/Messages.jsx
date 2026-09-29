@@ -103,14 +103,23 @@ export default function Messages() {
   }, [refreshThreads]);
 
   // "Message" buttons elsewhere in the app (contract detail) hand off a
-  // recipient via navigation state instead of an existing thread id.
+  // recipient via navigation state instead of an existing thread id. This
+  // effect has no cleanup, so without a guard it fires startThread() twice
+  // in a row under React StrictMode's dev double-invoke (and could race in
+  // production too, e.g. a fast double-navigation) - the ref makes it
+  // idempotent per mount regardless of how many times the effect body runs.
+  const threadStartRequested = useRef(false);
   useEffect(() => {
     const recipientId = location.state?.recipientId;
-    if (!threadId && recipientId) {
+    if (!threadId && recipientId && !threadStartRequested.current) {
+      threadStartRequested.current = true;
       messageApi
         .startThread({ recipientId, contractId: location.state?.contractId })
         .then(({ thread }) => navigate(`/messages/${thread.id}`, { replace: true }))
-        .catch((error) => toast.error(getErrorMessage(error, 'Could not start the conversation')));
+        .catch((error) => {
+          threadStartRequested.current = false;
+          toast.error(getErrorMessage(error, 'Could not start the conversation'));
+        });
     }
   }, [threadId, location.state, navigate]);
 
@@ -177,13 +186,24 @@ export default function Messages() {
     }, 1500);
   };
 
+  // A per-send-action id, generated client-side, that travels with the
+  // request so a manual retry (or a request that succeeded on the server but
+  // timed out on the client, e.g. during a Render cold start) is recognized
+  // as the same action and never creates a second message.
+  const makeClientId = () =>
+    (crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+
+  const appendMessage = (message) => {
+    setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
+  };
+
   const handleSend = async (e) => {
     e.preventDefault();
     if (!draft.trim() || !threadId) return;
     setSending(true);
     try {
-      const { message } = await messageApi.send(threadId, { body: draft.trim() });
-      setMessages((prev) => [...prev, message]);
+      const { message } = await messageApi.send(threadId, { body: draft.trim() }, makeClientId());
+      appendMessage(message);
       setDraft('');
       socket?.emit('thread:typing', { threadId, isTyping: false });
     } catch (error) {
@@ -199,8 +219,8 @@ export default function Messages() {
     if (!file || !threadId) return;
     setUploading(true);
     try {
-      const { message } = await messageApi.uploadAttachment(threadId, file);
-      setMessages((prev) => [...prev, message]);
+      const { message } = await messageApi.uploadAttachment(threadId, file, makeClientId());
+      appendMessage(message);
     } catch (error) {
       toast.error(getErrorMessage(error, 'Attachment upload failed'));
     } finally {
@@ -212,8 +232,8 @@ export default function Messages() {
     if (!threadId) return;
     setUploading(true);
     try {
-      const { message } = await messageApi.uploadAttachment(threadId, file);
-      setMessages((prev) => [...prev, message]);
+      const { message } = await messageApi.uploadAttachment(threadId, file, makeClientId());
+      appendMessage(message);
     } catch (error) {
       toast.error(getErrorMessage(error, 'Voice note upload failed'));
     } finally {

@@ -10,8 +10,17 @@ async function logEvent(contractId, actorId, type, detail) {
   await TimelineEvent.create({ contract: contractId, actor: actorId, type, detail });
 }
 
+// `contract.farmer`/`contract.buyer` are sometimes plain ObjectIds and
+// sometimes populated User documents (when the caller populated them before
+// this check, e.g. disputeController.getDispute). Comparing a populated
+// document with `.toString()` doesn't yield its id, so this always resolves
+// the underlying id first regardless of population state.
+function idOf(ref) {
+  return (ref && ref._id ? ref._id : ref).toString();
+}
+
 function assertParty(contract, userId) {
-  const isParty = [contract.farmer, contract.buyer].some((id) => id.toString() === userId.toString());
+  const isParty = [contract.farmer, contract.buyer].some((id) => idOf(id) === userId.toString());
   if (!isParty) throw new ApiError(403, 'Not a party to this contract');
 }
 

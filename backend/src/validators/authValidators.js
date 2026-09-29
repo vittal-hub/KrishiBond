@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { locationSchema } = require('./locationSchema');
 
 const registerSchema = z.object({
   body: z.object({
@@ -7,7 +8,7 @@ const registerSchema = z.object({
     password: z.string().min(8, 'Password must be at least 8 characters'),
     role: z.enum(['farmer', 'buyer']),
     phone: z.string().optional(),
-    location: z.object({ state: z.string().optional(), district: z.string().optional() }).optional(),
+    location: locationSchema,
   }),
 });
 

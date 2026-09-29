@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const ApiError = require('../utils/ApiError');
 const logger = require('../utils/logger');
@@ -15,17 +16,42 @@ function hashToken(token) {
 }
 
 async function register({ name, email, password, role, phone, location }) {
-  const existing = await User.findOne({ email });
-  if (existing) throw new ApiError(409, 'Email already registered');
-
-  const user = await User.create({ name, email, password, role, phone, location });
-
   const verificationToken = crypto.randomBytes(32).toString('hex');
-  user.emailVerificationToken = hashToken(verificationToken);
-  user.emailVerificationExpires = new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS);
 
-  const { accessToken, refreshToken } = issueTokenPair(user);
-  await user.save();
+  // Registration used to be 3 sequential round trips to MongoDB: a findOne()
+  // pre-check for the duplicate email, a create(), and a second save() to
+  // attach the verification token + refresh-token session (issueTokenPair
+  // needs a persisted user id to sign against). On a distant/slow-to-wake
+  // free-tier DB connection each round trip can add real, visible latency to
+  // the response the user is waiting on.
+  //
+  // The email uniqueness check is redundant with the schema's unique index -
+  // it only needs to run (and cost a round trip) on the rare duplicate path,
+  // not on every registration. And since JWTs only need `_id`/`role` to sign,
+  // pre-generating the id lets the whole user (including the verification
+  // token and the first refresh-token session) be written in one insert.
+  const _id = new mongoose.Types.ObjectId();
+  const sessionHolder = { _id, role, refreshTokens: [] };
+  const { accessToken, refreshToken } = issueTokenPair(sessionHolder);
+
+  let user;
+  try {
+    user = await User.create({
+      _id,
+      name,
+      email,
+      password,
+      role,
+      phone,
+      location,
+      emailVerificationToken: hashToken(verificationToken),
+      emailVerificationExpires: new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS),
+      refreshTokens: sessionHolder.refreshTokens,
+    });
+  } catch (err) {
+    if (err.code === 11000) throw new ApiError(409, 'Email already registered');
+    throw err;
+  }
 
   // Fire-and-forget: the account is already created and tokens already
   // issued at this point, so a slow or unreachable SMTP provider must never

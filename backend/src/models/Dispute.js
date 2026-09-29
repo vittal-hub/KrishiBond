@@ -16,6 +16,10 @@ const disputeSchema = new mongoose.Schema(
     evidenceUrls: [{ type: String }],
     status: { type: String, enum: ['open', 'under_review', 'resolved', 'rejected'], default: 'open' },
     resolutionNote: { type: String },
+    // The contract's status immediately before it was forced to 'disputed',
+    // so resolving/rejecting the dispute can restore the contract to where
+    // it actually was instead of assuming it was always 'active'.
+    previousContractStatus: { type: String },
     comments: { type: [commentSchema], default: [] },
   },
   { timestamps: true }

@@ -8,8 +8,18 @@ const { uploadChatAttachment } = require('../services/upload.service');
 
 const DEFAULT_PAGE_SIZE = 30;
 
+// `thread.participants` entries are plain ObjectIds on a fresh fetch but
+// full User documents once `.populate('participants', ...)` has run (as
+// getMessages does, to return the counterparty's name/role). Calling
+// `.toString()` on a populated document returns "[object Object]", not its
+// id, which made this check incorrectly reject genuine participants opening
+// their own chat. Resolving `_id` first makes the check populate-safe.
+function idOf(ref) {
+  return (ref && ref._id ? ref._id : ref).toString();
+}
+
 function assertParticipant(thread, userId) {
-  if (!thread.participants.some((p) => p.toString() === userId.toString())) {
+  if (!thread.participants.some((p) => idOf(p) === userId.toString())) {
     throw new ApiError(403, 'Not a participant of this thread');
   }
 }
@@ -38,11 +48,20 @@ const createThread = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'You cannot start a conversation with yourself');
   }
 
-  let thread = await Thread.findOne({
+  const filter = {
     participants: { $all: [req.user._id, recipientId], $size: 2 },
     contract: contractId || null,
-  });
+  };
 
+  // A true atomic upsert isn't possible here: MongoDB refuses to build an
+  // insert document from a query that combines `$all` and `$size` on the
+  // same array field ("cannot infer query fields to set, path 'participants'
+  // is matched twice"), no matter what is or isn't also passed via
+  // $setOnInsert. Falling back to find-then-create; the actual real-world
+  // double-create trigger (Messages.jsx firing startThread twice under
+  // StrictMode/rapid navigation) is fixed at the source with a ref guard
+  // there instead.
+  let thread = await Thread.findOne(filter);
   if (!thread) {
     thread = await Thread.create({
       participants: [req.user._id, recipientId],
@@ -50,6 +69,7 @@ const createThread = asyncHandler(async (req, res) => {
       listing: listingId || undefined,
     });
   }
+
   await thread.populate('participants', 'name role');
   res.status(201).json({ success: true, thread: toThreadDTO(thread, req.user._id, 0) });
 });
@@ -89,13 +109,37 @@ const sendMessage = asyncHandler(async (req, res) => {
   if (!thread) throw new ApiError(404, 'Thread not found');
   assertParticipant(thread, req.user._id);
 
-  const message = await Message.create({
-    thread: thread._id,
-    sender: req.user._id,
-    type: 'text',
-    body: req.body.body,
-    readBy: [req.user._id],
-  });
+  const { clientId } = req.body;
+
+  // Idempotent send: if this exact compose action (identified by the
+  // client-generated id) already produced a message - e.g. the first
+  // response timed out on a slow connection and the user pressed send again -
+  // return the message that already exists instead of inserting (and
+  // re-broadcasting) a second copy.
+  if (clientId) {
+    const existing = await Message.findOne({ thread: thread._id, clientId }).populate('sender', 'name');
+    if (existing) {
+      return res.status(200).json({ success: true, message: toMessageDTO(existing, req.user._id) });
+    }
+  }
+
+  let message;
+  try {
+    message = await Message.create({
+      thread: thread._id,
+      sender: req.user._id,
+      type: 'text',
+      body: req.body.body,
+      readBy: [req.user._id],
+      clientId,
+    });
+  } catch (err) {
+    if (err.code === 11000 && clientId) {
+      const existing = await Message.findOne({ thread: thread._id, clientId }).populate('sender', 'name');
+      if (existing) return res.status(200).json({ success: true, message: toMessageDTO(existing, req.user._id) });
+    }
+    throw err;
+  }
   await message.populate('sender', 'name');
 
   thread.lastMessageAt = new Date();
@@ -127,15 +171,33 @@ const uploadAttachment = asyncHandler(async (req, res) => {
   assertParticipant(thread, req.user._id);
   if (!req.file) throw new ApiError(400, 'No file was provided');
 
+  const { clientId } = req.body;
+  if (clientId) {
+    const existing = await Message.findOne({ thread: thread._id, clientId }).populate('sender', 'name');
+    if (existing) {
+      return res.status(200).json({ success: true, message: toMessageDTO(existing, req.user._id) });
+    }
+  }
+
   const { url, kind } = await uploadChatAttachment(req.file, `krishibond/chat/${thread._id}`);
 
-  const message = await Message.create({
-    thread: thread._id,
-    sender: req.user._id,
-    type: kind,
-    attachments: [url],
-    readBy: [req.user._id],
-  });
+  let message;
+  try {
+    message = await Message.create({
+      thread: thread._id,
+      sender: req.user._id,
+      type: kind,
+      attachments: [url],
+      readBy: [req.user._id],
+      clientId,
+    });
+  } catch (err) {
+    if (err.code === 11000 && clientId) {
+      const existing = await Message.findOne({ thread: thread._id, clientId }).populate('sender', 'name');
+      if (existing) return res.status(200).json({ success: true, message: toMessageDTO(existing, req.user._id) });
+    }
+    throw err;
+  }
   await message.populate('sender', 'name');
 
   thread.lastMessageAt = new Date();

@@ -586,8 +586,8 @@ export default function ContractDetail() {
               <PackageCheck className="w-4 h-4" /> Mark as fulfilled
             </button>
           )}
-          {['active', 'disputed'].includes(contract.status) && (
-            <Link to={`/disputes/new?contractId=${id}`} className="btn-ghost w-full text-clay-600">
+          {contract.status === 'active' && (
+            <Link to={`/disputes?contractId=${id}`} className="btn-ghost w-full text-clay-600">
               <ShieldAlert className="w-4 h-4" /> Report a problem
             </Link>
           )}
