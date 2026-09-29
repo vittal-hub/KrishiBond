@@ -3,8 +3,8 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const Transaction = require('../models/Transaction');
 
-const TRANSACTION_TYPES = ['escrow_fund', 'escrow_release', 'refund', 'platform_fee', 'wallet_topup'];
-const TRANSACTION_STATUSES = ['pending', 'success', 'failed', 'reversed'];
+const TRANSACTION_TYPES = ['escrow_fund', 'escrow_release', 'refund', 'platform_fee', 'wallet_topup', 'withdrawal'];
+const TRANSACTION_STATUSES = ['pending', 'processing', 'success', 'failed', 'reversed'];
 
 const listMyTransactions = asyncHandler(async (req, res) => {
   const { type, status, contractId, page = 1, limit = 20 } = req.query;

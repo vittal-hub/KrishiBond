@@ -13,6 +13,17 @@ const locationSchema = z
   .object({
     state: z.string().min(1).optional(),
     district: z.string().min(1).optional(),
+    // Free text, deliberately not cross-checked against any dataset (there
+    // is no authoritative village/city list) - just trimmed and capped, so
+    // legitimate multi-word names with punctuation ("Rae Bareli", "Anna
+    // Nagar, Ward 5") are never rejected, while empty/whitespace-only input
+    // is.
+    village: z
+      .string()
+      .trim()
+      .min(1, 'Village/City cannot be empty')
+      .max(200, 'Village/City name is too long')
+      .optional(),
   })
   .optional()
   .refine((loc) => !loc?.state || INDIA_STATES.includes(loc.state), {

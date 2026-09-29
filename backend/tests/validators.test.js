@@ -81,6 +81,30 @@ describe('locationSchema', () => {
   it('accepts a state with no district yet (partial update)', () => {
     expect(locationSchema.safeParse({ state: 'Kerala' }).success).toBe(true);
   });
+
+  it('accepts a free-text village/city with no dataset restriction', () => {
+    const result = locationSchema.safeParse({ state: 'Tamil Nadu', district: 'Chennai', village: 'Tambaram' });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a multi-word village name with common punctuation', () => {
+    const result = locationSchema.safeParse({ village: "Rae Bareli, Ward No. 5" });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a whitespace-only village', () => {
+    const result = locationSchema.safeParse({ village: '   ' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an excessively long village name', () => {
+    const result = locationSchema.safeParse({ village: 'a'.repeat(201) });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts no village at all (backward compatible with existing users)', () => {
+    expect(locationSchema.safeParse({ state: 'Kerala', district: 'Ernakulam' }).success).toBe(true);
+  });
 });
 
 describe('contractValidators', () => {

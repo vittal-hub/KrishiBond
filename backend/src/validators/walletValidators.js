@@ -29,4 +29,35 @@ const verifyTopupSchema = z.object({
   }),
 });
 
-module.exports = { initiateTopupSchema, completeTopupSchema, verifyTopupSchema, MIN_TOPUP, MAX_TOPUP };
+const MIN_WITHDRAWAL = 100;
+
+// Upper bound enforced here is deliberately generous - the real ceiling on
+// any given withdrawal is the wallet's actual available balance, checked
+// atomically server-side against the database (see
+// walletService.reserveWithdrawal), never trusted from the client.
+const initiateWithdrawalSchema = z.object({
+  body: z.object({
+    amount: z
+      .number({ invalid_type_error: 'Enter a valid amount' })
+      .positive('Amount must be greater than 0')
+      .min(MIN_WITHDRAWAL, `Minimum withdrawal is ₹${MIN_WITHDRAWAL}`)
+      .finite('Enter a valid amount'),
+  }),
+});
+
+const completeWithdrawalSchema = z.object({
+  body: z.object({
+    outcome: z.enum(['success', 'failed']).optional(),
+  }),
+});
+
+module.exports = {
+  initiateTopupSchema,
+  completeTopupSchema,
+  verifyTopupSchema,
+  initiateWithdrawalSchema,
+  completeWithdrawalSchema,
+  MIN_TOPUP,
+  MAX_TOPUP,
+  MIN_WITHDRAWAL,
+};

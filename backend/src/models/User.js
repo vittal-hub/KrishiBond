@@ -19,6 +19,10 @@ const userSchema = new mongoose.Schema(
     location: {
       state: String,
       district: String,
+      // Free text on purpose - no village/city dataset exists (unlike
+      // state/district, which are cross-checked against indiaLocations.js).
+      // See validators/locationSchema.js for the corresponding validation.
+      village: { type: String, trim: true, maxlength: 200 },
     },
     bio: { type: String, trim: true, maxlength: 500 },
     avatarUrl: { type: String },

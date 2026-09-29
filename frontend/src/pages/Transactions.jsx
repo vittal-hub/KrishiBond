@@ -3,18 +3,22 @@ import { Link } from 'react-router-dom';
 import { Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { transactionApi } from '../api/transactionApi';
+import { useAuth } from '../context/AuthContext.jsx';
 import Loader from '../components/Loader.jsx';
 import { formatCurrency, formatDate } from '../utils/format';
 import { getErrorMessage } from '../utils/errorMessage';
 
 const TYPES = [
   { value: '', label: 'All types' },
+  { value: 'wallet_topup', label: 'Wallet top-up' },
   { value: 'escrow_fund', label: 'Escrow funding' },
   { value: 'escrow_release', label: 'Escrow release' },
   { value: 'refund', label: 'Refund' },
+  { value: 'withdrawal', label: 'Withdrawal to bank' },
 ];
 
 export default function Transactions() {
+  const { user } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [meta, setMeta] = useState({ page: 1, pages: 1 });
   const [type, setType] = useState('');
@@ -41,10 +45,25 @@ export default function Transactions() {
 
   const handleInvoice = async (transaction) => {
     setDownloadingId(transaction._id);
+    let downloadInvoicePdf;
     try {
-      const { downloadInvoicePdf } = await import('../pdf/InvoicePdfDocument.jsx');
-      await downloadInvoicePdf(transaction);
+      ({ downloadInvoicePdf } = await import('../pdf/InvoicePdfDocument.jsx'));
     } catch (error) {
+      // A dynamic import() rejecting like this (as opposed to throwing
+      // inside the PDF library itself, caught below) almost always means the
+      // browser tried to fetch a hashed chunk file that no longer exists on
+      // the server - i.e. the page was left open across a new deployment.
+      // Reloading re-fetches the current index.html/asset map and fixes it;
+      // no amount of retrying the same stale page will.
+      console.error('Invoice module failed to load (likely a stale deployment):', error);
+      toast.error('A new version of KrishiBond is available. Please refresh the page and try again.');
+      setDownloadingId(null);
+      return;
+    }
+    try {
+      await downloadInvoicePdf(transaction, user ? { name: user.name, email: user.email } : undefined);
+    } catch (error) {
+      console.error('Invoice generation failed:', error);
       toast.error('Could not generate the invoice');
     } finally {
       setDownloadingId(null);

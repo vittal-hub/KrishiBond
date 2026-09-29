@@ -17,6 +17,13 @@ function generateReceiptNumber() {
   return `RCPT-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 }
 
+// Stands in for whatever reference a real payout provider (e.g. RazorpayX)
+// would return once it accepts a bank-transfer payout request. Never a real
+// transfer - see walletController.completeWithdrawalDemo.
+function generatePayoutRef() {
+  return `demo_payout_${crypto.randomBytes(8).toString('hex')}`;
+}
+
 const FAILURE_REASONS = ['Network error, please try again', 'Insufficient funds', 'Payment cancelled by user'];
 
 function randomFailureReason() {
@@ -35,6 +42,7 @@ module.exports = {
   generateFakeOrderId,
   generateFakePaymentId,
   generateReceiptNumber,
+  generatePayoutRef,
   randomFailureReason,
   decideOutcome,
 };

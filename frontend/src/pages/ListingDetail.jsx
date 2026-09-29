@@ -152,9 +152,9 @@ export default function ListingDetail() {
         )}
       </div>
 
-      <div className="stub-card p-6 h-fit">
+      <div className="stub-card p-6 h-fit min-w-0">
         <p className="text-xs text-ink-faint uppercase tracking-wide">Listed price</p>
-        <p className="font-display text-3xl font-semibold text-canopy-700 mt-1">
+        <p className="font-display text-2xl sm:text-3xl font-semibold text-canopy-700 mt-1 break-words [overflow-wrap:anywhere] leading-tight">
           {formatCurrency(listing.pricePerUnit)}
           <span className="text-sm text-ink-faint font-body"> / {listing.unit}</span>
         </p>

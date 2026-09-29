@@ -17,7 +17,7 @@ import toast from "react-hot-toast";
 import { reportApi } from "../api/reportApi";
 import { useAuth } from "../context/AuthContext.jsx";
 import Loader from "../components/Loader.jsx";
-import { formatCurrency } from "../utils/format";
+import { formatCurrency, formatCompactINR } from "../utils/format";
 import { getErrorMessage } from "../utils/errorMessage";
 
 const STATUS_COLORS = {
@@ -36,9 +36,9 @@ const REPORT_TYPES = [
 
 function KpiCard({ label, value }) {
   return (
-    <div className="stub-card p-5">
+    <div className="stub-card p-5 min-w-0">
       <p className="text-xs text-ink-faint">{label}</p>
-      <p className="font-display text-2xl font-semibold mt-1">{value}</p>
+      <p className="font-display text-xl sm:text-2xl font-semibold mt-1 break-words [overflow-wrap:anywhere] leading-tight">{value}</p>
     </div>
   );
 }
@@ -201,17 +201,34 @@ function ContractsReport({ data }) {
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">
-        <div className="stub-card p-6">
+        <div className="stub-card p-6 min-w-0">
           <h2 className="font-display text-lg font-semibold mb-4">Contract value by month</h2>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={byMonth}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,43,34,0.08)" />
-              <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="#7C8577" />
-              <YAxis tick={{ fontSize: 12 }} stroke="#7C8577" />
-              <Tooltip formatter={(v) => formatCurrency(v)} />
-              <Bar dataKey="value" fill="#2F5233" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          {/* Fixed-height wrapper (same pattern as TrendChart.jsx) is what
+              ResponsiveContainer needs a real height to resolve "100%"
+              against - it doesn't invent one from an unconstrained parent.
+              Heights step up by breakpoint per the design spec (~280px
+              mobile / ~320px tablet / ~380px desktop) using Tailwind's own
+              responsive variants rather than a JS viewport hack. */}
+          <div className="h-[280px] sm:h-[320px] lg:h-[380px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={byMonth} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,43,34,0.08)" />
+                <XAxis dataKey="month" tick={{ fontSize: 12, fill: "#7C8577" }} tickLine={false} axisLine={false} />
+                <YAxis
+                  tick={{ fontSize: 12, fill: "#7C8577" }}
+                  tickLine={false}
+                  axisLine={false}
+                  width={56}
+                  tickMargin={6}
+                  tickFormatter={formatCompactINR}
+                />
+                {/* Y-axis stays compact (₹20L) for space; the tooltip keeps
+                    the exact, full-precision amount (₹20,00,000). */}
+                <Tooltip formatter={(v) => [formatCurrency(v), "Contract value"]} />
+                <Bar dataKey="value" fill="#2F5233" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
         <div className="stub-card p-6">

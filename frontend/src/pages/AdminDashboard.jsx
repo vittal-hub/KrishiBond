@@ -34,12 +34,12 @@ const TABS = ['Overview', 'Users', 'KYC Queue', 'Payments', 'Categories', 'FAQ',
 
 function KpiCard({ icon: Icon, label, value }) {
   return (
-    <div className="stub-card p-5">
+    <div className="stub-card p-5 min-w-0">
       <div className="flex items-center gap-2 text-ink-faint">
         <Icon className="w-4 h-4" />
         <p className="text-xs">{label}</p>
       </div>
-      <p className="font-display text-2xl font-semibold mt-2">{value}</p>
+      <p className="font-display text-xl sm:text-2xl font-semibold mt-2 break-words [overflow-wrap:anywhere] leading-tight">{value}</p>
     </div>
   );
 }

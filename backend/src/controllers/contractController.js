@@ -67,7 +67,30 @@ const createContract = asyncHandler(async (req, res) => {
 
   let farmer = farmerId;
   let listing = null;
-  if (listingId) {
+
+  // A buyer must always propose against a real, currently-open produce
+  // listing - the farmer is derived from *that listing's owner*, never from
+  // a client-supplied farmerId. This is what prevents a buyer from sending a
+  // proposal to an arbitrary/unrelated "farmer" account by hand-crafting a
+  // request (see contractValidators.createContractSchema - farmerId is
+  // still accepted in the body shape for the farmer-initiated path below,
+  // but is deliberately ignored here).
+  if (req.user.role === 'buyer') {
+    if (!listingId) {
+      throw new ApiError(400, 'Select a produce listing from the marketplace to send a proposal');
+    }
+    listing = await Listing.findById(listingId);
+    if (!listing) throw new ApiError(404, 'Listing not found');
+    if (listing.status !== 'open') {
+      throw new ApiError(400, 'This listing is no longer open for proposals');
+    }
+    if (quantity > listing.quantity) {
+      throw new ApiError(400, `Requested quantity exceeds the available quantity (${listing.quantity} ${listing.unit})`);
+    }
+    farmer = listing.owner;
+  } else if (listingId) {
+    // Non-buyer creation paths (e.g. an admin/farmer tool) may still supply
+    // a listingId directly; kept for parity with the pre-existing behavior.
     listing = await Listing.findById(listingId);
     if (!listing) throw new ApiError(404, 'Listing not found');
     farmer = listing.owner;

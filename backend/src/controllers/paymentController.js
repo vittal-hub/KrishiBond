@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const Contract = require('../models/Contract');
@@ -330,8 +331,20 @@ const razorpayWebhook = asyncHandler(async (req, res) => {
   res.json({ success: true });
 });
 
-// Release escrow to the farmer once milestones/fulfilment are confirmed.
-// Supports partial (milestone-split) release via an optional `amount`.
+// Release escrow to the farmer once milestones/fulfilment are confirmed -
+// this is the actual "settlement" step: the only place a contract's
+// fulfillment turns into withdrawable farmer wallet balance. Supports
+// partial (milestone-split) release via an optional `amount`.
+//
+// Wrapped in a MongoDB transaction (the production DB - MongoDB Atlas - is
+// always a replica set, which is required for this) so that the Payment
+// status transition and both wallets' balance changes either all happen or
+// none do. Idempotency against a duplicate/retried request comes from the
+// atomic `findOneAndUpdate(..., status: 'held', ...)` guard below: if two
+// requests race, MongoDB's transaction conflict detection lets only one
+// through per underlying document change, and `session.withTransaction`
+// automatically retries the loser, which then correctly sees the payment is
+// no longer `held` and rejects instead of double-crediting the wallet.
 const releaseEscrow = asyncHandler(async (req, res) => {
   const contract = await Contract.findById(req.params.contractId);
   if (!contract) throw new ApiError(404, 'Contract not found');
@@ -339,52 +352,78 @@ const releaseEscrow = asyncHandler(async (req, res) => {
   if (contract.buyer.toString() !== req.user._id.toString()) {
     throw new ApiError(403, 'Only the buyer can release escrow');
   }
-
-  const payment = await Payment.findOne({ _id: req.params.paymentId, contract: contract._id });
-  if (!payment) throw new ApiError(404, 'Payment not found');
-  if (payment.status !== 'held') throw new ApiError(400, 'Payment is not in a releasable state');
-
-  const releaseAmount = req.body.amount !== undefined ? Number(req.body.amount) : payment.amount;
-  if (!(releaseAmount > 0) || releaseAmount > payment.amount) {
-    throw new ApiError(400, 'Release amount must be greater than 0 and not exceed the held amount');
+  if (['cancelled', 'disputed'].includes(contract.status)) {
+    throw new ApiError(400, 'Escrow cannot be released for a cancelled or disputed contract');
   }
 
+  const requestedAmount = req.body.amount !== undefined ? Number(req.body.amount) : undefined;
+
+  const session = await mongoose.startSession();
   let releasedPayment;
-  if (releaseAmount < payment.amount) {
-    payment.amount -= releaseAmount;
-    await payment.save();
-    releasedPayment = await Payment.create({
-      contract: contract._id,
-      payer: payment.payer,
-      payee: payment.payee,
-      amount: releaseAmount,
-      status: 'released',
-      gateway: payment.gateway,
-      gatewayOrderId: payment.gatewayOrderId,
-      releasedAt: new Date(),
+  try {
+    await session.withTransaction(async () => {
+      const payment = await Payment.findOne({ _id: req.params.paymentId, contract: contract._id }).session(session);
+      if (!payment) throw new ApiError(404, 'Payment not found');
+      if (payment.status !== 'held') {
+        throw new ApiError(400, payment.status === 'released' ? 'This payment has already been settled' : 'Payment is not in a releasable state');
+      }
+
+      const releaseAmount = requestedAmount !== undefined ? requestedAmount : payment.amount;
+      if (!(releaseAmount > 0) || releaseAmount > payment.amount) {
+        throw new ApiError(400, 'Release amount must be greater than 0 and not exceed the held amount');
+      }
+
+      // Atomic guard: only succeeds if the payment is still exactly `held`
+      // with at least this much of it remaining - the actual mechanism that
+      // prevents the same escrow being released twice.
+      const guarded = await Payment.findOneAndUpdate(
+        { _id: payment._id, status: 'held', amount: { $gte: releaseAmount } },
+        releaseAmount < payment.amount
+          ? { $inc: { amount: -releaseAmount } }
+          : { $set: { status: 'released', releasedAt: new Date() } },
+        { new: true, session }
+      );
+      if (!guarded) throw new ApiError(400, 'This payment has already been settled');
+
+      if (releaseAmount < payment.amount) {
+        const [created] = await Payment.create(
+          [{
+            contract: contract._id,
+            payer: payment.payer,
+            payee: payment.payee,
+            amount: releaseAmount,
+            status: 'released',
+            gateway: payment.gateway,
+            gatewayOrderId: payment.gatewayOrderId,
+            releasedAt: new Date(),
+          }],
+          { session }
+        );
+        releasedPayment = created;
+      } else {
+        releasedPayment = guarded;
+      }
+
+      await walletService.recordEscrowRelease({
+        farmerId: contract.farmer,
+        buyerId: contract.buyer,
+        amount: releaseAmount,
+        payment: releasedPayment,
+        contract,
+        gateway: payment.gateway,
+        gatewayRef: `release-${releasedPayment._id}`,
+        session,
+      });
     });
-  } else {
-    payment.status = 'released';
-    payment.releasedAt = new Date();
-    await payment.save();
-    releasedPayment = payment;
+  } finally {
+    await session.endSession();
   }
 
-  await walletService.recordEscrowRelease({
-    farmerId: contract.farmer,
-    buyerId: contract.buyer,
-    amount: releaseAmount,
-    payment: releasedPayment,
-    contract,
-    gateway: payment.gateway,
-    gatewayRef: `release-${releasedPayment._id}`,
-  });
-
-  await logEvent(contract._id, req.user._id, 'escrow_released', `Released ${releaseAmount} to farmer`);
+  await logEvent(contract._id, req.user._id, 'escrow_released', `Released ${releasedPayment.amount} to farmer`);
   await notifyUser(req.app.get('io'), contract.farmer, {
     type: 'escrow_released',
     category: 'payment',
-    message: `Escrow payment of ${releaseAmount} released to you`,
+    message: `Escrow payment of ${releasedPayment.amount} released to you`,
     link: `/contracts/${contract._id}`,
   });
 

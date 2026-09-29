@@ -7,4 +7,7 @@ export const walletApi = {
     api.post(`/wallet/topup/${transactionId}/demo/complete`, payload).then((r) => r.data),
   verifyTopup: (transactionId, payload) =>
     api.post(`/wallet/topup/${transactionId}/verify`, payload).then((r) => r.data),
+  initiateWithdrawal: (amount) => api.post('/wallet/withdraw/initiate', { amount }).then((r) => r.data),
+  completeWithdrawalDemo: (transactionId, payload) =>
+    api.post(`/wallet/withdraw/${transactionId}/demo/complete`, payload).then((r) => r.data),
 };

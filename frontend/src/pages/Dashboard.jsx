@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText, TrendingUp, Wallet, Clock, ArrowRight, Plus, CalendarClock, AlertCircle, MessageSquare, Bell } from 'lucide-react';
+import { FileText, TrendingUp, Wallet, Clock, ArrowRight, Search, CalendarClock, AlertCircle, MessageSquare, Bell } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useNotifications } from '../hooks/useNotifications.js';
 import { contractApi } from '../api/contractApi';
@@ -34,11 +34,15 @@ function buildMonthlySeries(series, monthsCount, type) {
 
 function StatCard({ icon: Icon, label, value, accent }) {
   return (
-    <div className="stub-card p-5">
+    <div className="stub-card p-5 min-w-0">
       <div className={`w-9 h-9 rounded-stub flex items-center justify-center ${accent}`}>
         <Icon className="w-4.5 h-4.5" size={18} />
       </div>
-      <p className="text-2xl font-display font-semibold mt-3">{value}</p>
+      {/* break-words + overflow-wrap:anywhere let a long value (a large
+          rupee amount with no spaces) wrap onto a second line instead of
+          overflowing the card - the full number always stays visible,
+          nothing is ever truncated. */}
+      <p className="text-xl sm:text-2xl font-display font-semibold mt-3 break-words [overflow-wrap:anywhere] leading-tight">{value}</p>
       <p className="text-xs text-ink-faint mt-0.5">{label}</p>
     </div>
   );
@@ -157,8 +161,12 @@ export default function Dashboard() {
           <p className="text-sm text-ink-faint mt-1 capitalize">{user?.role} dashboard</p>
         </div>
         {user?.role === 'buyer' && (
-          <Link to="/contracts/new" className="btn-primary">
-            <Plus className="w-4 h-4" /> New contract
+          // Buyers propose contracts from a specific produce listing (see
+          // ListingDetail.jsx's "Propose a contract" button), never from a
+          // blank form - there is no farmer/produce to attach a contract to
+          // without one. This CTA sends them to browse listings instead.
+          <Link to="/marketplace" className="btn-primary">
+            <Search className="w-4 h-4" /> Browse marketplace
           </Link>
         )}
       </div>

@@ -45,8 +45,8 @@ export default function Register() {
 
   const onSubmit = async (values) => {
     try {
-      const { district, state, confirmPassword, ...rest } = values;
-      await registerUser({ ...rest, location: { district, state } });
+      const { district, state, village, confirmPassword, ...rest } = values;
+      await registerUser({ ...rest, location: { district, state, village } });
       navigate("/dashboard", { replace: true });
     } catch (error) {
       toast.error(getErrorMessage(error, "Could not create your account"));

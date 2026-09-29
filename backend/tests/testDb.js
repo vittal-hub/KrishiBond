@@ -1,12 +1,16 @@
 const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 
 let mongod;
 
-// Spins up a fresh in-memory MongoDB per test file - no external DB needed,
-// and each file gets full isolation from the others.
+// A single-node replica set (not a plain standalone MongoMemoryServer) -
+// multi-document transactions (used by wallet settlement/withdrawal, see
+// walletService.js) require a replica set to work at all. The real
+// deployment target (MongoDB Atlas, even on the free tier) is always a
+// replica set, so this keeps tests representative of production rather than
+// silently skipping transaction behavior.
 async function connect() {
-  mongod = await MongoMemoryServer.create();
+  mongod = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   await mongoose.connect(mongod.getUri());
 }
 

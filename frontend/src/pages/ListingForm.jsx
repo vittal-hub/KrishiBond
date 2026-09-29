@@ -173,7 +173,7 @@ export default function ListingForm() {
           <input id="harvestDate" type="date" className="input-field" {...register('harvestDate')} />
         </div>
 
-        <LocationFields register={register} watch={watch} setValue={setValue} errors={errors} />
+        <LocationFields register={register} watch={watch} setValue={setValue} errors={errors} showVillage={false} />
 
         <div className="flex flex-wrap gap-5">
           <label className="flex items-center gap-2 text-sm text-ink-soft">

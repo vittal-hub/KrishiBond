@@ -1,4 +1,5 @@
 const request = require('supertest');
+const Listing = require('../src/models/Listing');
 
 // Registers a fresh user and returns both the resulting user record and an
 // Authorization header ready to spread into a supertest `.set(...)` call.
@@ -21,4 +22,22 @@ function authHeader(accessToken) {
   return { Authorization: `Bearer ${accessToken}` };
 }
 
-module.exports = { registerUser, authHeader };
+// A buyer can only create a contract against a real, open listing (the
+// farmer is derived from listing.owner server-side - see
+// contractController.createContract). Tests that just need *some* contract
+// to exist create the listing directly via the model rather than the full
+// marketplace API, since the listing's own creation flow isn't what's under
+// test in most callers of this helper.
+async function createListing(farmerUserId, overrides = {}) {
+  return Listing.create({
+    owner: farmerUserId,
+    cropType: 'Basmati Rice',
+    quantity: 100,
+    unit: 'quintal',
+    pricePerUnit: 3000,
+    status: 'open',
+    ...overrides,
+  });
+}
+
+module.exports = { registerUser, authHeader, createListing };

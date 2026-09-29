@@ -4,6 +4,7 @@ import {
   Bell,
   ChevronDown,
   LogOut,
+  Menu,
   Settings,
   Sprout,
   User,
@@ -22,7 +23,7 @@ const CATEGORY_LABELS = {
   system: "KrishiBond",
 };
 
-export default function Navbar() {
+export default function Navbar({ onMenuClick }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { notifications, unreadCount, markRead, markAllRead } =
@@ -51,14 +52,25 @@ export default function Navbar() {
   return (
     <header className="sticky top-0 z-40 border-b border-ink/10 bg-paper/90 backdrop-blur">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-stub bg-canopy-600 flex items-center justify-center">
-            <Sprout className="w-4.5 h-4.5 text-paper" size={18} />
-          </div>
-          <span className="font-display text-lg font-semibold text-ink">
-            KrishiBond
-          </span>
-        </Link>
+        <div className="flex items-center gap-1">
+          {onMenuClick && (
+            <button
+              onClick={onMenuClick}
+              aria-label="Open menu"
+              className="lg:hidden -ml-2 p-2 rounded-stub hover:bg-ink/5 transition"
+            >
+              <Menu className="w-5 h-5 text-ink-soft" />
+            </button>
+          )}
+          <Link to="/" className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-stub bg-canopy-600 flex items-center justify-center">
+              <Sprout className="w-4.5 h-4.5 text-paper" size={18} />
+            </div>
+            <span className="font-display text-lg font-semibold text-ink">
+              KrishiBond
+            </span>
+          </Link>
+        </div>
 
         <div className="flex items-center gap-2">
           <div className="relative" ref={bellRef}>

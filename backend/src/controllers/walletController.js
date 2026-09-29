@@ -1,6 +1,8 @@
+const mongoose = require('mongoose');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const Transaction = require('../models/Transaction');
+const Kyc = require('../models/Kyc');
 const walletService = require('../services/wallet.service');
 const razorpayService = require('../services/razorpay.service');
 const demoPaymentService = require('../services/demoPayment.service');
@@ -8,9 +10,38 @@ const { razorpay: razorpayConfig } = require('../config/env');
 
 const { getOrCreateWallet } = walletService;
 
+// The bank account a user can withdraw to. Deliberately reuses the existing
+// Kyc.bankDetails (already admin-reviewed via the KYC queue) instead of a
+// parallel "BankAccount" model - one already-verified place for this data,
+// and withdrawal eligibility naturally follows the same admin-approval
+// workflow the app already has (AdminDashboard's KYC Queue).
+async function getVerifiedBankAccount(userId) {
+  const kyc = await Kyc.findOne({ user: userId });
+  const bank = kyc?.bankDetails;
+  if (!bank?.accountNumber || !bank?.ifsc || !bank?.accountHolderName) return null;
+  return { kyc, bank };
+}
+
+function maskAccountNumber(accountNumber) {
+  const last4 = accountNumber.slice(-4);
+  return `${'*'.repeat(Math.max(0, accountNumber.length - 4))}${last4}`;
+}
+
 const getMyWallet = asyncHandler(async (req, res) => {
   const wallet = await getOrCreateWallet(req.user._id);
-  res.json({ success: true, wallet });
+  const verified = await getVerifiedBankAccount(req.user._id);
+  res.json({
+    success: true,
+    wallet,
+    bankAccount: verified
+      ? {
+          accountHolderName: verified.bank.accountHolderName,
+          accountNumberMasked: maskAccountNumber(verified.bank.accountNumber),
+          ifsc: verified.bank.ifsc,
+          isVerified: verified.kyc.status === 'approved',
+        }
+      : null,
+  });
 });
 
 function round2(amount) {
@@ -160,4 +191,116 @@ const verifyTopupRazorpay = asyncHandler(async (req, res) => {
   res.json({ success: true, transaction, wallet });
 });
 
-module.exports = { getMyWallet, initiateTopup, completeTopupDemo, verifyTopupRazorpay };
+// --- Withdraw to Bank ---
+//
+// Two-phase, mirroring the demo payment/top-up pattern already used
+// elsewhere: `initiate` reserves the funds (atomically, so it's safe under
+// concurrent requests), `demo/complete` simulates the payout provider's
+// eventual callback. No real payment provider is integrated for payouts -
+// see the final report - so this never contacts a real bank; it exists so
+// the whole wallet/withdrawal architecture (reservation, idempotency,
+// status lifecycle, wallet restoration on failure) is real and testable,
+// with only the very last "money actually moves" step left as an explicit,
+// clearly-labeled stub a real payout integration can replace.
+const initiateWithdrawal = asyncHandler(async (req, res) => {
+  const amount = req.body.amount;
+
+  const verified = await getVerifiedBankAccount(req.user._id);
+  if (!verified) {
+    throw new ApiError(400, 'Add your bank account details before withdrawing');
+  }
+  if (verified.kyc.status !== 'approved') {
+    throw new ApiError(400, 'Please add and verify your own bank account before withdrawing');
+  }
+
+  const session = await mongoose.startSession();
+  let transaction;
+  try {
+    await session.withTransaction(async () => {
+      // The atomic guard (`balance: {$gte: amount}` in the filter) is what
+      // makes this safe against a user firing multiple withdrawal requests
+      // at once for more than they actually have - see
+      // walletService.reserveWithdrawal.
+      const wallet = await walletService.reserveWithdrawal({ userId: req.user._id, amount, session });
+      if (!wallet) {
+        throw new ApiError(400, 'You do not have enough available balance for this withdrawal');
+      }
+
+      const [created] = await Transaction.create(
+        [{
+          wallet: wallet._id,
+          user: req.user._id,
+          type: 'withdrawal',
+          amount,
+          status: 'processing',
+          gateway: 'demo',
+          meta: {
+            accountHolderName: verified.bank.accountHolderName,
+            accountNumberMasked: maskAccountNumber(verified.bank.accountNumber),
+            ifsc: verified.bank.ifsc,
+          },
+        }],
+        { session }
+      );
+      transaction = created;
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  res.status(201).json({ success: true, transactionId: transaction._id, status: transaction.status, amount });
+});
+
+// Simulates the payout provider confirming (or failing) the bank transfer.
+// Idempotent: once a withdrawal leaves `processing`, retrying this is a
+// no-op that just returns the already-settled transaction, and the atomic
+// `findOneAndUpdate(..., status: 'processing', ...)` guard means at most one
+// concurrent/retried call can ever apply the outcome.
+const completeWithdrawalDemo = asyncHandler(async (req, res) => {
+  const existing = await Transaction.findOne({ _id: req.params.transactionId, user: req.user._id, type: 'withdrawal' });
+  if (!existing) throw new ApiError(404, 'Withdrawal not found');
+  if (existing.status !== 'processing') {
+    return res.json({ success: true, transaction: existing });
+  }
+
+  const outcome = demoPaymentService.decideOutcome(req.body.outcome) === 'failed' ? 'failed' : 'success';
+
+  const session = await mongoose.startSession();
+  let transaction;
+  try {
+    await session.withTransaction(async () => {
+      const update =
+        outcome === 'failed'
+          ? { $set: { status: 'failed', 'meta.failureReason': demoPaymentService.randomFailureReason() } }
+          : { $set: { status: 'success', 'meta.payoutRef': demoPaymentService.generatePayoutRef() } };
+
+      const guarded = await Transaction.findOneAndUpdate(
+        { _id: existing._id, status: 'processing' },
+        update,
+        { new: true, session }
+      );
+      if (!guarded) throw new ApiError(400, 'This withdrawal has already been processed');
+      transaction = guarded;
+
+      if (outcome === 'failed') {
+        await walletService.finalizeWithdrawalFailure({ userId: req.user._id, amount: guarded.amount, session });
+      } else {
+        await walletService.finalizeWithdrawalSuccess({ userId: req.user._id, amount: guarded.amount, session });
+      }
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  const wallet = await getOrCreateWallet(req.user._id);
+  res.json({ success: true, transaction, wallet });
+});
+
+module.exports = {
+  getMyWallet,
+  initiateTopup,
+  completeTopupDemo,
+  verifyTopupRazorpay,
+  initiateWithdrawal,
+  completeWithdrawalDemo,
+};

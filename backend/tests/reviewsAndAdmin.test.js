@@ -2,7 +2,7 @@ const request = require('supertest');
 const testDb = require('./testDb');
 const app = require('../src/app');
 const User = require('../src/models/User');
-const { registerUser, authHeader } = require('./helpers');
+const { registerUser, authHeader, createListing } = require('./helpers');
 
 beforeAll(async () => {
   await testDb.connect();
@@ -17,10 +17,11 @@ afterAll(async () => {
 });
 
 async function fulfilledContract(farmer, buyer) {
+  const listing = await createListing(farmer.user.id);
   const createRes = await request(app)
     .post('/api/contracts')
     .set(authHeader(buyer.accessToken))
-    .send({ farmerId: farmer.user.id, cropType: 'Wheat', quantity: 5, unit: 'quintal', agreedPricePerUnit: 2000 });
+    .send({ listingId: listing._id.toString(), cropType: 'Wheat', quantity: 5, unit: 'quintal', agreedPricePerUnit: 2000 });
   const contractId = createRes.body.contract.id;
 
   await request(app).post(`/api/contracts/${contractId}/sign`).set(authHeader(farmer.accessToken));
@@ -65,10 +66,11 @@ describe('reviews', () => {
   });
 
   it('rejects a review for a contract that is not yet fulfilled', async () => {
+    const listing = await createListing(farmer.user.id);
     const createRes = await request(app)
       .post('/api/contracts')
       .set(authHeader(buyer.accessToken))
-      .send({ farmerId: farmer.user.id, cropType: 'Wheat', quantity: 5, unit: 'quintal', agreedPricePerUnit: 2000 });
+      .send({ listingId: listing._id.toString(), cropType: 'Wheat', quantity: 5, unit: 'quintal', agreedPricePerUnit: 2000 });
 
     const res = await request(app)
       .post('/api/reviews')
