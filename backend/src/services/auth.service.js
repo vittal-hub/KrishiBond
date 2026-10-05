@@ -51,9 +51,18 @@ async function register({ name, email, password, role, phone, location }) {
   return { user, accessToken, refreshToken };
 }
 
+// Per-stage timing, logged only when the whole call is slow enough to matter
+// (>1s) - this is what actually answers "which part is slow" instead of
+// guessing, the next time a login is reported as taking several seconds.
+// Logged at `warn` so it's visible in production (the logger drops `debug`
+// there), but only on the slow path so normal logins stay silent.
 async function login({ email, password }) {
+  const t0 = Date.now();
   const user = await User.findOne({ email }).select('+password +refreshTokens');
-  if (!user || !(await user.comparePassword(password))) {
+  const t1 = Date.now();
+  const passwordOk = user && (await user.comparePassword(password));
+  const t2 = Date.now();
+  if (!user || !passwordOk) {
     throw new ApiError(401, 'Invalid email or password');
   }
   if (user.status !== 'active') {
@@ -62,6 +71,15 @@ async function login({ email, password }) {
 
   const { accessToken, refreshToken } = issueTokenPair(user);
   await user.save();
+  const t3 = Date.now();
+
+  const totalMs = t3 - t0;
+  if (totalMs > 1000) {
+    logger.warn(
+      `Slow login for ${email} (role=${user.role}): ${totalMs}ms total - ` +
+        `findUser=${t1 - t0}ms, comparePassword=${t2 - t1}ms, issueTokenAndSave=${t3 - t2}ms`
+    );
+  }
 
   return { user, accessToken, refreshToken };
 }
