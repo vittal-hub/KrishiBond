@@ -239,3 +239,46 @@ describe('protected routes', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('POST /api/auth/forgot-password', () => {
+  it('responds quickly and with a generic message for an existing account', async () => {
+    await registerAndVerify();
+
+    const startedAt = Date.now();
+    const res = await request(app).post('/api/auth/forgot-password').send({ email: VALID_USER.email });
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(res.status).toBe(200);
+    expect(res.body.message).toMatch(/if that email exists/i);
+    // The email send must never be on the response's critical path - this
+    // guards against a regression back to the synchronous `await` that
+    // caused the original bug (a slow/unreachable SMTP provider blocking
+    // the HTTP response for tens of seconds).
+    expect(elapsedMs).toBeLessThan(2000);
+  });
+
+  it('gives the same generic response for an unknown email (no enumeration)', async () => {
+    const res = await request(app).post('/api/auth/forgot-password').send({ email: 'nobody@example.com' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.message).toMatch(/if that email exists/i);
+    expect(res.body.devResetToken).toBeUndefined();
+  });
+
+  it('issues a working reset token for an existing account (dev mode)', async () => {
+    await registerAndVerify();
+
+    const forgotRes = await request(app).post('/api/auth/forgot-password').send({ email: VALID_USER.email });
+    expect(forgotRes.body.devResetToken).toEqual(expect.any(String));
+
+    const resetRes = await request(app)
+      .post(`/api/auth/reset-password/${forgotRes.body.devResetToken}`)
+      .send({ password: 'newpassword123' });
+    expect(resetRes.status).toBe(200);
+
+    const loginRes = await request(app)
+      .post('/api/auth/login')
+      .send({ email: VALID_USER.email, password: 'newpassword123' });
+    expect(loginRes.status).toBe(200);
+  });
+});

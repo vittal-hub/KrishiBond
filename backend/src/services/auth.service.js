@@ -203,7 +203,17 @@ async function forgotPassword(email) {
   user.resetPasswordExpires = new Date(Date.now() + RESET_PASSWORD_TTL_MS);
   await user.save();
 
-  await emailService.sendPasswordResetEmail(user, token);
+  // Fire-and-forget, same as register()'s OTP email: the reset token is
+  // already saved at this point, so a slow/unreachable SMTP provider must
+  // never delay (or fail) this response - the endpoint's job is just to
+  // accept the request and start the email on its way. Previously this was
+  // `await`ed, so a hung SMTP connection (no timeout was configured on the
+  // transporter either - see email.service.js) blocked the HTTP response
+  // long enough for the frontend's own request timeout to fire first,
+  // surfacing a misleading "server is waking up" message.
+  emailService.sendPasswordResetEmail(user, token).catch((err) => {
+    logger.error(`Failed to send password reset email to ${user.email}: ${err.message}`);
+  });
 
   return { devResetToken: nodeEnv === 'production' ? undefined : token };
 }

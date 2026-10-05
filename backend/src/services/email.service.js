@@ -9,6 +9,13 @@ if (smtp.host && smtp.user && smtp.pass) {
     port: smtp.port,
     secure: smtp.port === 465,
     auth: { user: smtp.user, pass: smtp.pass },
+    // Without these, a slow/unreachable SMTP provider (or an outbound port
+    // silently blocked by the hosting environment) can leave the socket open
+    // far longer than any caller would reasonably wait - these bound every
+    // send to a worst case of ~20s instead of hanging indefinitely.
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 20000,
   });
 }
 
