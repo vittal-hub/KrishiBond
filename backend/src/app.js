@@ -12,6 +12,14 @@ const routes = require('./routes');
 
 const app = express();
 
+// Render (and most PaaS hosts) sit the app behind a single reverse proxy that
+// sets X-Forwarded-For. Without this, express-rate-limit refuses to trust
+// that header (ERR_ERL_UNEXPECTED_X_FORWARDED_FOR) and would otherwise rate
+// -limit by the proxy's own IP for every client. `1` trusts exactly one hop
+// (the platform's proxy) rather than `true` (which would trust the whole
+// chain and let a client spoof its own IP via X-Forwarded-For).
+app.set('trust proxy', 1);
+
 app.use(helmet());
 // credentials: true is required so the browser will send/receive the
 // httpOnly refresh-token cookie set by /auth endpoints.
